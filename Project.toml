@@ -1,0 +1,16 @@
+name = "HubbardDiagonalization"
+uuid = "aa2880e1-af8e-48e8-9ccc-27163daa77df"
+version = "0.1.0"
+authors = ["CoolSpy3 <coolspythree@gmail.com>"]
+
+[deps]
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
+
+[compat]
+CSV = "0.10.15"
+LinearAlgebra = "1.12.0"
+Plots = "1.41.1"
+UnicodePlots = "3.8.1"

@@ -1,37 +1,27 @@
-include("graphs.jl")
-include("state_enumeration.jl")
-include("symmetric_matrices.jl")
+module HubbardDiagonalization
 
-import LinearAlgebra
+export main
+
+# Include our submodules
+include("Graphs.jl")
+include("StateEnumeration.jl")
+include("SymmetricMatrices.jl")
 
 using .Graphs
 using .StateEnumeration
 using .SymmetricMatrices
 
+# Import libraries
 const use_unicode_plots = false
 
-try
-	import CSV
-	import Plots
-	if use_unicode_plots
-		import UnicodePlots
-	end
-catch ImportError
-	@info "Installing required packages..."
-	import Pkg
+import CSV
+import LinearAlgebra
+import Plots
 
-	Pkg.add("CSV")
-	import CSV
-	Pkg.add("Plots")
-	import Plots
-
-	if use_unicode_plots
-		Pkg.add("UnicodePlots")
-		import UnicodePlots
-	end
-end
+# Set up plotting backend
 using Plots
 if use_unicode_plots
+	import UnicodePlots
 	unicodeplots()
 end
 
@@ -287,4 +277,6 @@ function (@main)(args)
 	# display(graph)
 
 	@info "Done."
+end
+
 end
