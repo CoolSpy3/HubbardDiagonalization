@@ -17,7 +17,7 @@ const use_unicode_plots = false
 import CSV
 import LinearAlgebra
 import Plots
-import YAML
+import TOML
 
 # Set up plotting backend
 using Plots
@@ -28,7 +28,8 @@ end
 
 function (@main)(args)
 	# Load Parameters
-	params = YAML.load_file("parameters.yml")
+	config = TOML.parsefile("SimulationConfig.toml")
+	params = config["parameters"]
 	num_colors = params["num_colors"]
 
 	t = params["t"]
@@ -36,11 +37,13 @@ function (@main)(args)
 	u_test = params["u_test"]
 	U = params["U"]
 
-	u_min = params["u_min"]
-	u_max = params["u_max"]
-	u_step = params["u_step"]
+	plot_config = config["plot"]
+	u_min = plot_config["u_min"]
+	u_max = plot_config["u_max"]
+	u_step = plot_config["u_step"]
 
-	graph = linear_chain(params["num_sites"])
+	graph_config = config["graph"]
+	graph = linear_chain(graph_config["num_sites"])
 
 	@info "Initialized with t=$t, T=$T, u_step=$u_step, U=$(U)"
 

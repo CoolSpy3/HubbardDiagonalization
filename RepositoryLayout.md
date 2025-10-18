@@ -3,10 +3,10 @@ Here is a basic overview of the project layout.
 - ./
   |- Makefile               # Build instructions
   |- Manifest.toml          # Package lock file
-  |- parameters.yml         # Simulation parameters
   |- Project.toml           # Project metadata and dependencies
   |- README.md              # Project overview documentation
   |- RepositoryLayout.md    # This file!
+  |- SimulationConfig.toml  # Simulation parameters
   \- src/
     |- graphs.jl              # Defines a basic undirected graph structure and some common graph types.
     |- main.jl                # Entrypoint and main logic

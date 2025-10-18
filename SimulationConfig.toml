@@ -1,0 +1,15 @@
+[parameters]
+num_colors = 2
+
+t = 0.0
+T = 0.07
+u_test = 0.0
+U = 1.0
+
+[plot]
+u_min = -5
+u_max = 5
+u_step = 0.01
+
+[graph]
+num_sites = 1
