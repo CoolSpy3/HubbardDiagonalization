@@ -45,7 +45,7 @@ function (@main)(args)
 	u_max = 5
 	u_step = 0.01
 
-	@info "Initialized with t=$t, T=$T, u_step=$u_step, U=$(U)!"
+	@info "Initialized with t=$t, T=$T, u_step=$u_step, U=$(U)"
 
 	B = 1/T
 
