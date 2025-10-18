@@ -55,9 +55,9 @@ function (@main)(args)
 	# Observables
 	observables = Dict{String, Function}()
 
-	# observables["Energy"] = (eigen_value, _) -> eigen_value
 	observables["Num_Particles"] = state -> sum(count_ones(color) for color in state)
 	observables["Filled States"] = state -> count_ones(reduce(&, state))
+	observables["Energy"] = state -> 0.0  # Will be handled specially later
 
 	"""
 		create_observable_data_map()
@@ -176,6 +176,10 @@ function (@main)(args)
 
 				# Now that we've constructed the row for state_i, compute the observables
 				for (observable_name, observable_function) in observables
+					if observable_name == "Energy"  # We just calculated this above
+						push!(observables_basis[observable_name], H[i,i])
+						continue
+					end
 					# Pre-compute the observable for this basis state
 					push!(observables_basis[observable_name], observable_function(state_i))
 				end
@@ -235,6 +239,10 @@ function (@main)(args)
 
 		# Compute each observable
 		for (observable_name, observable_data) in observable_data
+			if observable_name == "Energy"
+				# The energy depends on u, so we have to update it
+				observable_data = observable_data .+ (-(u - u_test)) * n_fermion_data
+			end
 			@debug begin "  $observable_name: $observable_data" end
 			# Compute the expectation value of each observable
 			expectation_value = sum(weight_correction .* weights .* observable_data) / Z
