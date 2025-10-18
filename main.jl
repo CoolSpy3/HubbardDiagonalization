@@ -11,6 +11,7 @@ using .SymmetricMatrices
 const use_unicode_plots = false
 
 try
+	import CSV
 	import Plots
 	if use_unicode_plots
 		import UnicodePlots
@@ -19,6 +20,8 @@ catch ImportError
 	@info "Installing required packages..."
 	import Pkg
 
+	Pkg.add("CSV")
+	import CSV
 	Pkg.add("Plots")
 	import Plots
 
@@ -239,6 +242,11 @@ function (@main)(args)
 		end
 	end
 
+	@info "Exporting observable data..."
+
+	Base.Filesystem.mkpath("output")
+	CSV.write("output/observable_data.csv", merge(Dict("u" => u_range), observable_values))
+
 	@info "Plotting observables..."
 
 	# Initialize the plot
@@ -255,8 +263,8 @@ function (@main)(args)
 	end
 
 	# Save the plot
-	savefig(graph, "observables_u.png")
-	display(graph)
+	savefig(graph, "output/observables_u.png")
+	# display(graph)
 
 	@info "Done."
 end
