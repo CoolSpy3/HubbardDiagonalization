@@ -17,6 +17,7 @@ const use_unicode_plots = false
 import CSV
 import LinearAlgebra
 import Plots
+import YAML
 
 # Set up plotting backend
 using Plots
@@ -26,17 +27,20 @@ if use_unicode_plots
 end
 
 function (@main)(args)
-	# Parameters
-	num_colors = 2
+	# Load Parameters
+	params = YAML.load_file("parameters.yml")
+	num_colors = params["num_colors"]
 
-	t = 0.0
-	T = 0.07
-	u_test = 0.0
-	U = 1.0
+	t = params["t"]
+	T = params["T"]
+	u_test = params["u_test"]
+	U = params["U"]
 
-	u_min = -5
-	u_max = 5
-	u_step = 0.01
+	u_min = params["u_min"]
+	u_max = params["u_max"]
+	u_step = params["u_step"]
+
+	graph = linear_chain(params["num_sites"])
 
 	@info "Initialized with t=$t, T=$T, u_step=$u_step, U=$(U)"
 
@@ -68,9 +72,6 @@ function (@main)(args)
 	end
 
 	@info "Defined observables: $(keys(observables))"
-
-	@info "Creating graph..."
-	graph = linear_chain(1)
 
 	num_sites = Graphs.num_sites(graph)
 	N_max_fermions = num_colors * num_sites
