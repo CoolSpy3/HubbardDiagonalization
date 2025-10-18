@@ -30,17 +30,17 @@ function (@main)(args)
 	# Load Parameters
 	config = TOML.parsefile("SimulationConfig.toml")
 	params = config["parameters"]
-	num_colors = params["num_colors"]
+	num_colors::Int = params["num_colors"]
 
-	t = params["t"]
-	T = params["T"]
-	u_test = params["u_test"]
-	U = params["U"]
+	t::Float64 = params["t"]
+	T::Float64 = params["T"]
+	u_test::Float64 = params["u_test"]
+	U::Float64 = params["U"]
 
 	plot_config = config["plot"]
-	u_min = plot_config["u_min"]
-	u_max = plot_config["u_max"]
-	u_step = plot_config["u_step"]
+	u_min::Float64 = plot_config["u_min"]
+	u_max::Float64 = plot_config["u_max"]
+	u_step::Float64 = plot_config["u_step"]
 
 	graph_config = config["graph"]
 	graph = linear_chain(graph_config["num_sites"])
