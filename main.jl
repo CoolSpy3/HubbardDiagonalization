@@ -37,7 +37,7 @@ end
 
 function (@main)(args)
 	# Parameters
-	num_colors = 3
+	num_colors = 2
 
 	t = 0.0
 	T = 0.07
@@ -57,7 +57,11 @@ function (@main)(args)
 
 	observables["Num_Particles"] = state -> sum(count_ones(color) for color in state)
 	observables["Filled States"] = state -> count_ones(reduce(&, state))
-	observables["Energy"] = state -> 0.0  # Will be handled specially later
+
+	# Will be handled specially later
+	observables["m^2"] = state -> 0.0
+	observables["Energy"] = state -> 0.0
+	observables["Entropy"] = state -> 0.0
 
 	"""
 		create_observable_data_map()
@@ -176,12 +180,17 @@ function (@main)(args)
 
 				# Now that we've constructed the row for state_i, compute the observables
 				for (observable_name, observable_function) in observables
-					if observable_name == "Energy"  # We just calculated this above
-						push!(observables_basis[observable_name], H[i,i])
-						continue
+					local observable_value::Float64
+					if observable_name == "Entropy" || observable_name == "m^2"
+						observable_value = 0.0  # Handled specially later
+					elseif observable_name == "Energy"
+						observable_value = H[i,i]  # We just calculated this above
+					else
+						# Pre-compute the observable for this basis state
+						observable_value = observable_function(state_i)
 					end
-					# Pre-compute the observable for this basis state
-					push!(observables_basis[observable_name], observable_function(state_i))
+
+					push!(observables_basis[observable_name], observable_value)
 				end
 			end
 
@@ -218,10 +227,7 @@ function (@main)(args)
 
 	@info "Computed data for $(length(weights)) states."
 
-	@info "Computing derived observables..."
-
-	# Compute derived observables
-	# observable_data["m^2"] = @. observable_data["Num_Particles"] - 2 * observable_data["Doublons"]
+	observable_data["m^2"] = @. observable_data["Num_Particles"] - 2 * observable_data["Filled States"]
 
 	@info "Computing observables over range of u..."
 
@@ -239,6 +245,9 @@ function (@main)(args)
 
 		# Compute each observable
 		for (observable_name, observable_data) in observable_data
+			if observable_name == "Entropy"
+				continue
+			end
 			if observable_name == "Energy"
 				# The energy depends on u, so we have to update it
 				observable_data = observable_data .+ (-(u - u_test)) * n_fermion_data
@@ -248,6 +257,9 @@ function (@main)(args)
 			expectation_value = sum(weight_correction .* weights .* observable_data) / Z
 			push!(observable_values[observable_name], expectation_value)
 		end
+
+		# Do this at the end to ensure we know the energy value
+		push!(observable_values["Entropy"], observable_values["Energy"][end] * B + log(Z))
 	end
 
 	@info "Exporting observable data..."
@@ -263,7 +275,7 @@ function (@main)(args)
 			ylabel="Observable Value",
 			title="t=$t, T=$T, U=$U, num_sites=$(num_sites), num_colors=$(num_colors)",
 			legend=:topright,
-			size=(800,600)
+			size=(2000,2000)
 		)
 	# Plot each observable
 	for (name, values) in observable_values
