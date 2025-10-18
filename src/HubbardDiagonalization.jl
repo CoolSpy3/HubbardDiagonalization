@@ -55,26 +55,36 @@ function (@main)(args)
 	observables["Num_Particles"] = state -> sum(count_ones(color) for color in state)
 	observables["Filled States"] = state -> count_ones(reduce(&, state))
 
-	# Will be handled specially later
-	observables["m^2"] = state -> 0.0
-	observables["Energy"] = state -> 0.0
-	observables["Entropy"] = state -> 0.0
+	observables["Energy"] = _ -> 0.0  # Will be handled specially
+
+	# Observables that can be calculated from other observables
+	derived_observables = Dict{String, Function}()
+	derived_observables["m^2"] = observable_data -> @. observable_data["Num_Particles"] - 2 * observable_data["Filled States"]
+	derived_observables["Density"] = observable_data -> observable_data["Num_Particles"] ./ Graphs.num_sites(graph)
+	derived_observables["Entropy"] = _ -> Float64[]  # Will be handled specially
 
 	"""
-		create_observable_data_map()
+		create_observable_data_map(include_derived::Bool)
+
+	include_derived: Whether to include derived observables in the map.
 
 	A convenience function to create an empty map from observable names to data vectors.
 	"""
 	# We're going to need a few of these. Might as well make it a function.
-	function create_observable_data_map()
+	function create_observable_data_map(include_derived::Bool)
 		map = Dict{String, Vector{Float64}}()
 		for observable_name in keys(observables)
 			map[observable_name] = Float64[]
 		end
+		if include_derived
+			for derived_name in keys(derived_observables)
+				map[derived_name] = Float64[]
+			end
+		end
 		return map
 	end
 
-	@info "Defined observables: $(keys(observables))"
+	@info "Defined observables: $(union(keys(observables), keys(derived_observables)))"
 
 	num_sites = Graphs.num_sites(graph)
 	N_max_fermions = num_colors * num_sites
@@ -83,7 +93,7 @@ function (@main)(args)
 	# Initialize some containers to store the generated data
 	weights = Float64[]  # Weights for each state
 	n_fermion_data = Int[]  # Number of fermions for each state (used for re-weighting)
-	observable_data = create_observable_data_map()
+	observable_data = create_observable_data_map(false)
 
 	@info "Computing Hamiltonian blocks and observables..."
 	# The number of fermions and the color configuration are conserved over tunneling,
@@ -93,7 +103,7 @@ function (@main)(args)
 			# Size of the Hamiltonian block
 			L = prod(binomial(num_sites, n) for n in color_configuration)
 			H = SymmetricMatrix(L)  # Use custom "SymmetricMatrix" type to save memory at the cost of speed
-			observables_basis = create_observable_data_map()  # Compute the observables for each state as we build the matrix
+			observables_basis = create_observable_data_map(false)  # Compute the observables for each state as we build the matrix
 
 			# Compute Hamiltonian matrix elements between all pairs of states
 			# enumerate_multistate returns elements in a consistent order, so
@@ -175,9 +185,7 @@ function (@main)(args)
 				# Now that we've constructed the row for state_i, compute the observables
 				for (observable_name, observable_function) in observables
 					local observable_value::Float64
-					if observable_name == "Entropy" || observable_name == "m^2"
-						observable_value = 0.0  # Handled specially later
-					elseif observable_name == "Energy"
+					if observable_name == "Energy"
 						observable_value = H[i,i]  # We just calculated this above
 					else
 						# Pre-compute the observable for this basis state
@@ -221,13 +229,17 @@ function (@main)(args)
 
 	@info "Computed data for $(length(weights)) states."
 
-	observable_data["m^2"] = @. observable_data["Num_Particles"] - 2 * observable_data["Filled States"]
+	@info "Computing derived observables..."
+
+	for (observable_name, observable_function) in derived_observables
+		observable_data[observable_name] = observable_function(observable_data)
+	end
 
 	@info "Computing observables over range of u..."
 
 	u_range = u_min:u_step:u_max
 	# Create a new container to store the observable values at each u
-	observable_values = create_observable_data_map()
+	observable_values = create_observable_data_map(true)
 	for u in u_range
 		# Re-weight the data according to the new u value
 		weight_correction = exp.(-B * (-(u - u_test)) .* n_fermion_data)
@@ -239,12 +251,11 @@ function (@main)(args)
 
 		# Compute each observable
 		for (observable_name, observable_data) in observable_data
-			if observable_name == "Entropy"
-				continue
-			end
 			if observable_name == "Energy"
 				# The energy depends on u, so we have to update it
 				observable_data = observable_data .+ (-(u - u_test)) * n_fermion_data
+			elseif observable_name == "Entropy"
+				continue
 			end
 			@debug begin "  $observable_name: $observable_data" end
 			# Compute the expectation value of each observable
@@ -277,7 +288,7 @@ function (@main)(args)
 	end
 
 	# Save the plot
-	savefig(graph, "output/observables_u.png")
+	savefig(graph, "output/observable_data.png")
 	# display(graph)
 
 	@info "Done."
