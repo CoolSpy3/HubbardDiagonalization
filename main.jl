@@ -34,7 +34,7 @@ end
 
 function (@main)(args)
 	# Parameters
-	num_colors = 2
+	num_colors = 3
 
 	t = 0.0
 	T = 0.07
@@ -53,9 +53,22 @@ function (@main)(args)
 	observables = Dict{String, Function}()
 
 	# observables["Energy"] = (eigen_value, _) -> eigen_value
-	observables["Num_Particles"] = (_, state_matrix) -> sum(state_matrix)
-	observables["Doublons"] = (_, state_matrix) -> sum(prod(state_matrix, dims=1))
-	# observables["Correlation"] = (_, state_matrix) -> state_matrix[1, 1] * state_matrix[1, 2] + state_matrix[2, 1] * state_matrix[2, 2] - state_matrix[1, 1] * state_matrix[2, 2] - state_matrix[1, 2] * state_matrix[2, 1]
+	observables["Num_Particles"] = state -> sum(count_ones(color) for color in state)
+	observables["Filled States"] = state -> count_ones(reduce(&, state))
+
+	"""
+		create_observable_data_map()
+
+	A convenience function to create an empty map from observable names to data vectors.
+	"""
+	# We're going to need a few of these. Might as well make it a function.
+	function create_observable_data_map()
+		map = Dict{String, Vector{Float64}}()
+		for observable_name in keys(observables)
+			map[observable_name] = Float64[]
+		end
+		return map
+	end
 
 	@info "Defined observables: $(keys(observables))"
 
@@ -69,11 +82,7 @@ function (@main)(args)
 	# Initialize some containers to store the generated data
 	weights = Float64[]  # Weights for each state
 	n_fermion_data = Int[]  # Number of fermions for each state (used for re-weighting)
-	observable_data = Dict{String, Vector{Float64}}()  # Observable values for each state
-	# Initialize empty array for each observable
-	for observable_name in keys(observables)
-		observable_data[observable_name] = Float64[]
-	end
+	observable_data = create_observable_data_map()
 
 	@info "Computing Hamiltonian blocks and observables..."
 	# The number of fermions and the color configuration are conserved over tunneling,
@@ -83,6 +92,7 @@ function (@main)(args)
 			# Size of the Hamiltonian block
 			L = prod(binomial(num_sites, n) for n in color_configuration)
 			H = SymmetricMatrix(L)  # Use custom "SymmetricMatrix" type to save memory at the cost of speed
+			observables_basis = create_observable_data_map()  # Compute the observables for each state as we build the matrix
 
 			# Compute Hamiltonian matrix elements between all pairs of states
 			# enumerate_multistate returns elements in a consistent order, so
@@ -160,6 +170,12 @@ function (@main)(args)
 						end
 					end
 				end
+
+				# Now that we've constructed the row for state_i, compute the observables
+				for (observable_name, observable_function) in observables
+					# Pre-compute the observable for this basis state
+					push!(observables_basis[observable_name], observable_function(state_i))
+				end
 			end
 
 			num_permutations = num_configuration_permutations(color_configuration)
@@ -178,30 +194,16 @@ function (@main)(args)
 			for (eigen_val, eigen_vec) in zip(eig.values, eachcol(eig.vectors))
 				@debug begin "  eigen_val=$eigen_val, eigen_vec=$eigen_vec" end
 
-				# Compute the state vector
-				# A matrix where each row is a color, each column is a site,
-				# and each entry is the number of fermions of that color on that site
-				# Alas, because we're constructing this from multiple eigenvectors,
-				# the bitmask trick from before doesn't work (because non-integer/more than one)
-				# numbers of fermions can be on a site.
-				state_matrix = zeros(Int, num_colors, num_sites)
-				# Again, enumerate_multistate returns elements in a consistent order,
-				# so the coefficients in eigen_vec correspond to the states in order
-				for (i, state) in enumerate(enumerate_multistate(num_sites, color_configuration))
-					# Convert each state's bitmask representation to the full state matrix component
-					state = [digits(color, base=2, pad=num_sites) for color in state]
-					state = hcat(state...)'  # Black magic to convert array of arrays to a matrix
-					state_matrix += eigen_vec[i] .* state  # The state is a superposition of these basis states
-				end
-
 				# Weight data of this state in the partition function
 				weight = num_permutations * exp(-B * eigen_val)
 				push!(weights, weight)
 				push!(n_fermion_data, N_fermions)
 
 				# Compute each observable for this state
-				for (observable_name, observable_function) in observables
-					push!(observable_data[observable_name], observable_function(eigen_val, state_matrix))
+				# Because we already computed the observables for each basis state,
+				# we can just do a weighted sum over those based on the eigenvector components
+				for (observable_name, observable_basis_data) in observables_basis
+					push!(observable_data[observable_name], sum(observable_basis_data .* eigen_vec))
 				end
 			end
 		end
@@ -218,10 +220,7 @@ function (@main)(args)
 
 	u_range = u_min:u_step:u_max
 	# Create a new container to store the observable values at each u
-	observable_values = Dict{String, Vector{Float64}}()
-	for observable_name in keys(observable_data)
-		observable_values[observable_name] = Float64[]
-	end
+	observable_values = create_observable_data_map()
 	for u in u_range
 		# Re-weight the data according to the new u value
 		weight_correction = exp.(-B * (-(u - u_test)) .* n_fermion_data)
