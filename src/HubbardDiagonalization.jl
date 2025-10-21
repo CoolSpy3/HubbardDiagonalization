@@ -16,6 +16,7 @@ const use_unicode_plots = false
 
 import CSV
 import LinearAlgebra
+import Logging
 import Plots
 import TOML
 
@@ -27,6 +28,16 @@ if use_unicode_plots
 end
 
 function (@main)(args)
+	# Install our own logger for the duration of the program
+	old_logger = Logging.global_logger(Logging.SimpleLogger(stderr, Logging.Debug))
+	if "--debug" in args
+		@warn "Running in debug mode!"
+		sleep(5)  # Give user time to see the warning
+	else
+		# In normal mode disable debug logging
+		disable_logging(Logging.Debug)
+	end
+
 	# Load Parameters
 	config = TOML.parsefile("SimulationConfig.toml")
 	params = config["parameters"]
@@ -224,6 +235,14 @@ function (@main)(args)
 			# wrappers around this.
 			eig = LinearAlgebra.eigen(H_symmetric_view)
 
+			@debug begin
+				msg = "observable_basis_data:\n"
+				for (name, data) in observables_basis
+					msg *= "  $name: $data\n"
+				end
+				msg
+			end
+
 			# Compute and store observables for each eigenstate
 			for (eigen_val, eigen_vec) in zip(eig.values, eachcol(eig.vectors))
 				@debug begin "  eigen_val=$eigen_val, eigen_vec=$eigen_vec" end
@@ -237,7 +256,6 @@ function (@main)(args)
 				# Because we already computed the observables for each basis state,
 				# we can just do a weighted sum over those based on the eigenvector components
 				for (observable_name, observable_basis_data) in observables_basis
-					@debug begin "    observable_name=$observable_name, observable_basis_data=$observable_basis_data" end
 					push!(observable_data[observable_name], sum(observable_basis_data .* eigen_vec))
 				end
 			end
@@ -252,6 +270,16 @@ function (@main)(args)
 		observable_data[observable_name] = observable_function(observable_data)
 	end
 
+	@debug begin
+		msg = "Computed data:\n"
+		msg *= "  weights: $weights\n"
+		msg *= "  n_fermion_data: $n_fermion_data\n"
+		for (name, data) in observable_data
+			msg *= "  $name: $data\n"
+		end
+		msg
+	end
+
 	@info "Computing observables over range of u..."
 
 	u_range = u_min:u_step:u_max
@@ -264,17 +292,17 @@ function (@main)(args)
 		# Compute the partition function
 		Z = sum(weight_correction .* weights)
 
-		@debug begin "u=$u, Z=$Z, weights=$weights, weight_corrections=$weight_correction" end
+		@debug begin "u=$u, weight_corrections=$weight_correction" end
 
 		# Compute each observable
 		for (observable_name, observable_data) in observable_data
 			if observable_name == "Energy"
 				# The energy depends on u, so we have to update it
 				observable_data = @. observable_data + ((-(u - u_test)) * n_fermion_data)
+				@debug begin "  Updated Energy data: $observable_data" end
 			elseif observable_name == "Entropy"
 				continue
 			end
-			@debug begin "  $observable_name: $observable_data" end
 			# Compute the expectation value of each observable
 			expectation_value = sum(@. weight_correction * weights * observable_data) / Z
 			push!(observable_values[observable_name], expectation_value)
@@ -309,6 +337,11 @@ function (@main)(args)
 	# display(graph)
 
 	@info "Done."
+
+	# Restore the old logger after we're done
+	Logging.global_logger(old_logger)
+
+	return 0
 end
 
 end

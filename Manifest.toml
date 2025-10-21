@@ -2,7 +2,7 @@
 
 julia_version = "1.12.1"
 manifest_format = "2.0"
-project_hash = "4464bb499358b5a1d3f6f05f3922e1749eeedcc6"
+project_hash = "89b3d8f3b973464fff969642279fa7909ed33e67"
 
 [[deps.AliasTables]]
 deps = ["PtrArrays", "Random"]
@@ -298,7 +298,7 @@ uuid = "2e76f6c2-a576-52d4-95c1-20adfe4de566"
 version = "8.5.1+0"
 
 [[deps.HubbardDiagonalization]]
-deps = ["CSV", "LinearAlgebra", "Plots", "TOML", "UnicodePlots"]
+deps = ["CSV", "LinearAlgebra", "Logging", "Plots", "TOML", "UnicodePlots"]
 path = "."
 uuid = "aa2880e1-af8e-48e8-9ccc-27163daa77df"
 version = "0.1.0"
