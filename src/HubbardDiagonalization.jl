@@ -269,13 +269,13 @@ function (@main)(args)
 		for (observable_name, observable_data) in observable_data
 			if observable_name == "Energy"
 				# The energy depends on u, so we have to update it
-				observable_data = observable_data .+ (-(u - u_test)) * n_fermion_data
+				observable_data = @. observable_data + ((-(u - u_test)) * n_fermion_data)
 			elseif observable_name == "Entropy"
 				continue
 			end
 			@debug begin "  $observable_name: $observable_data" end
 			# Compute the expectation value of each observable
-			expectation_value = sum(weight_correction .* weights .* observable_data) / Z
+			expectation_value = sum(@. weight_correction * weights * observable_data) / Z
 			push!(observable_values[observable_name], expectation_value)
 		end
 
