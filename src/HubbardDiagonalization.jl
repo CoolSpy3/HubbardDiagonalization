@@ -237,6 +237,7 @@ function (@main)(args)
 				# Because we already computed the observables for each basis state,
 				# we can just do a weighted sum over those based on the eigenvector components
 				for (observable_name, observable_basis_data) in observables_basis
+					@debug begin "    observable_name=$observable_name, observable_basis_data=$observable_basis_data" end
 					push!(observable_data[observable_name], sum(observable_basis_data .* eigen_vec))
 				end
 			end
