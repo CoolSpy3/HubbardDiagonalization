@@ -29,13 +29,13 @@ end
 
 function (@main)(args)
 	# Install our own logger for the duration of the program
-	old_logger = Logging.global_logger(Logging.SimpleLogger(stderr, Logging.Debug))
+	old_logger = Logging.global_logger(Logging.ConsoleLogger(stderr, Logging.Debug))
 	if "--debug" in args
 		@warn "Running in debug mode!"
 		sleep(5)  # Give user time to see the warning
 	else
 		# In normal mode disable debug logging
-		disable_logging(Logging.Debug)
+		Logging.disable_logging(Logging.Debug)
 	end
 
 	# Load Parameters
