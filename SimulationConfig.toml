@@ -12,4 +12,4 @@ u_max = 20
 u_step = 0.25
 
 [graph]
-num_sites = 1
+num_sites = 4

@@ -173,10 +173,26 @@ function (@main)(args)
 						# Verify that the hop is allowed by the graph
 						if has_edge(graph, site_1, site_2)
 							# If so, the sign will be flipped if an odd number of
-							# spots are *between* the two sites.
+							# spots are occupied *between* the two sites.
 							# Note that this refers to the representation of the
 							# spots not how they're related by the graph
-							sign = iseven(site_1 - site_2) ? -1 : 1
+
+							occupied_sites = state_i[hopped_color] & state_j[hopped_color]
+							# Create a mask with 1s in all bits between site_1 and site_2.
+							# Note that julia's one-based indexing actually works out here
+							# If site=2 (so it's referring to the 2nd bit in the bitmask),
+							# Then, (1 << site) = 0b100, and (1 << site) - 1 = 0b011
+							# (Keep in mind that digits is interpreting this in little-endian,
+							# so the second-least-significant bit is the "2nd" bit)
+							# With this in mind, we can calculate the mask by taking the
+							# mask for all bits at or below site_2 (which is larger than site_1)
+							# and ANDing it with all of the bits above site_1 (which is just the
+							# same algorithm negated)
+							# Note that because the hop occurs between site_1 and site_2,
+							# both site_1 and site_2 are 0 in occupied_sites, so it doesn't
+							# matter if we include them in the mask or not.
+							bitween_mask = ((1 << site_2) - 1) & ~((1 << site_1) - 1)
+							sign = iseven(count_ones(occupied_sites & bitween_mask)) ? 1 : -1
 							H[i,j] = sign * (-t)
 						end
 					end
