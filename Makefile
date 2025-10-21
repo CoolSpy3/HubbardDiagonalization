@@ -1,4 +1,4 @@
-.PHONY: clean debug default run
+.PHONY: clean debug default run setup
 
 default: run
 
@@ -11,3 +11,6 @@ debug:
 
 run:
 	@julia --project=. -m HubbardDiagonalization
+
+setup:
+	@julia --project=. -e 'import Pkg; Pkg.instantiate()'
