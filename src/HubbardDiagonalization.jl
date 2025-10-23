@@ -55,6 +55,7 @@ function (@main)(args)
 
 	graph_config = config["graph"]
 	graph = linear_chain(graph_config["num_sites"])
+	num_sites = Graphs.num_sites(graph)
 
 	@info "Initialized with t=$t, T=$T, u_step=$u_step, U=$(U)"
 
@@ -74,15 +75,30 @@ function (@main)(args)
 	derived_observables["Density"] = observable_data -> observable_data["Num_Particles"] ./ Graphs.num_sites(graph)
 	derived_observables["Entropy"] = _ -> Float64[]  # Will be handled specially
 
+	# Additional Plots that can be directly calculated
+	overlays = Dict{String, Function}()
+
+	if num_sites == 1
+		# Single-site Hubbard model exact solutions
+		e0(n, u) = U * binomial(n, 2) - (u #= + (U / 2) * (num_colors - 1) =#) * n
+		weighted_sum(u, f) = sum(binomial(num_colors, n) * f(n) * exp(-B * e0(n, u)) for n in 0:num_colors)
+		z0(u) = weighted_sum(u, n -> 1)
+		rho(u) = (1/z0(u)) * weighted_sum(u, n -> n)
+		energy(u) = (1/z0(u)) * weighted_sum(u, n -> e0(n, u) #= + (u + (U/2) * (num_colors - 1)) *  n =#)
+		overlays["Actual Energy"] = energy
+		overlays["Actual Entropy"] = u -> log(z0(u)) + B * (energy(u) #= - (u + (U/2) * (num_colors - 1)) * rho(u) =#)
+	end
+
 	"""
-		create_observable_data_map(include_derived::Bool)
+		create_observable_data_map(include_derived::Bool, include_overlays::Bool)
 
 	include_derived: Whether to include derived observables in the map.
+	include_overlays: Whether to include overlay functions in the map.
 
 	A convenience function to create an empty map from observable names to data vectors.
 	"""
 	# We're going to need a few of these. Might as well make it a function.
-	function create_observable_data_map(include_derived::Bool)
+	function create_observable_data_map(include_derived::Bool, include_overlays::Bool)
 		map = Dict{String, Vector{Float64}}()
 		for observable_name in keys(observables)
 			map[observable_name] = Float64[]
@@ -92,19 +108,23 @@ function (@main)(args)
 				map[derived_name] = Float64[]
 			end
 		end
+		if include_overlays
+			for overlay_name in keys(overlays)
+				map[overlay_name] = Float64[]
+			end
+		end
 		return map
 	end
 
-	@info "Defined observables: $(union(keys(observables), keys(derived_observables)))"
+	@info "Defined observables: $(union(keys(observables), keys(derived_observables), keys(overlays)))"
 
-	num_sites = Graphs.num_sites(graph)
 	N_max_fermions = num_colors * num_sites
 	@debug "N_max_fermions=$N_max_fermions"
 
 	# Initialize some containers to store the generated data
 	weights = Float64[]  # Weights for each state
 	n_fermion_data = Int[]  # Number of fermions for each state (used for re-weighting)
-	observable_data = create_observable_data_map(false)
+	observable_data = create_observable_data_map(false, false)
 
 	@info "Computing Hamiltonian blocks and observables..."
 	# The number of fermions and the color configuration are conserved over tunneling,
@@ -114,7 +134,7 @@ function (@main)(args)
 			# Size of the Hamiltonian block
 			L = prod(binomial(num_sites, n) for n in color_configuration)
 			H = SymmetricMatrix(L)  # Use custom "SymmetricMatrix" type to save memory at the cost of speed
-			observables_basis = create_observable_data_map(false)  # Compute the observables for each state as we build the matrix
+			observables_basis = create_observable_data_map(false, false)  # Compute the observables for each state as we build the matrix
 
 			# Compute Hamiltonian matrix elements between all pairs of states
 			# enumerate_multistate returns elements in a consistent order, so
@@ -286,7 +306,7 @@ function (@main)(args)
 
 	u_range = u_min:u_step:u_max
 	# Create a new container to store the observable values at each u
-	observable_values = create_observable_data_map(true)
+	observable_values = create_observable_data_map(true, true)
 	for u in u_range
 		# Re-weight the data according to the new u value
 		weight_correction = exp.(-B * (-(u - u_test)) .* n_fermion_data)
@@ -308,6 +328,10 @@ function (@main)(args)
 			# Compute the expectation value of each observable
 			expectation_value = sum(@. weight_correction * weights * observable_data) / Z
 			push!(observable_values[observable_name], expectation_value)
+		end
+
+		for (overlay_name, overlay_function) in overlays
+			push!(observable_values[overlay_name], overlay_function(u))
 		end
 
 		# Do this at the end to ensure we know the energy value
