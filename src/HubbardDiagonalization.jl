@@ -211,15 +211,8 @@ function (@main)(args)
 
 				# Now that we've constructed the row for state_i, compute the observables
 				for (observable_name, observable_function) in observables
-					local observable_value::Float64
-					if observable_name == "Energy"
-						observable_value = H[i,i]  # We just calculated this above
-					else
-						# Pre-compute the observable for this basis state
-						observable_value = observable_function(state_i)
-					end
-
-					push!(observables_basis[observable_name], observable_value)
+					# Pre-compute the observable for this basis state
+					push!(observables_basis[observable_name], observable_function(state_i))
 				end
 			end
 
@@ -247,16 +240,25 @@ function (@main)(args)
 			for (eigen_val, eigen_vec) in zip(eig.values, eachcol(eig.vectors))
 				@debug begin "  eigen_val=$eigen_val, eigen_vec=$eigen_vec" end
 
+				# eigen() returns normalized eigenvectors, so we don't need to do any normalization here
+
 				# Weight data of this state in the partition function
 				weight = num_permutations * exp(-B * eigen_val)
 				push!(weights, weight)
 				push!(n_fermion_data, N_fermions)
 
 				# Compute each observable for this state
-				# Because we already computed the observables for each basis state,
-				# we can just do a weighted sum over those based on the eigenvector components
 				for (observable_name, observable_basis_data) in observables_basis
-					push!(observable_data[observable_name], sum(observable_basis_data .* eigen_vec))
+					if observable_name == "Energy"
+						# The energy is just the eigenvalue
+						push!(observable_data[observable_name], eigen_val)
+					else
+						# Because we already computed the observables for each basis state,
+						# we can just do a weighted sum over those based on the eigenvector components
+						observable_value = sum(observable_basis_data .* eigen_vec .* eigen_vec)
+						observable_value = abs(observable_value)  # We don't know the sign of the eigenvectors. Just take the positive value
+						push!(observable_data[observable_name], observable_value)
+					end
 				end
 			end
 		end
