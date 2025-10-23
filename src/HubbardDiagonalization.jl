@@ -246,7 +246,7 @@ function (@main)(args)
 			# in memory at once, but I can't find a good way around this
 			# Even the builtin `eigvals`/`eigvecs` functions are just
 			# wrappers around this.
-			eig = LinearAlgebra.eigen(H_symmetric_view)
+			eigen_data = LinearAlgebra.eigen(H_symmetric_view)
 
 			@debug begin
 				msg = "observable_basis_data:\n"
@@ -256,8 +256,8 @@ function (@main)(args)
 				msg
 			end
 
-			# Compute and store observables for each eigenstate
-			for (eigen_val, eigen_vec) in zip(eig.values, eachcol(eig.vectors))
+			# Compute and store observables for each eigen-state
+			for (eigen_val, eigen_vec) in zip(eigen_data.values, eachcol(eigen_data.vectors))
 				@debug begin "  eigen_val=$eigen_val, eigen_vec=$eigen_vec" end
 
 				# eigen() returns normalized eigenvectors, so we don't need to do any normalization here
@@ -275,8 +275,7 @@ function (@main)(args)
 					else
 						# Because we already computed the observables for each basis state,
 						# we can just do a weighted sum over those based on the eigenvector components
-						observable_value = sum(observable_basis_data .* eigen_vec .* eigen_vec)
-						observable_value = abs(observable_value)  # We don't know the sign of the eigenvectors. Just take the positive value
+						observable_value = sum(@. observable_basis_data * eigen_vec * eigen_vec)
 						push!(observable_data[observable_name], observable_value)
 					end
 				end
