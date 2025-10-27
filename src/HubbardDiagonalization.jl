@@ -80,13 +80,16 @@ function (@main)(args)
 
 	if num_sites == 1
 		# Single-site Hubbard model exact solutions
-		e0(n, u) = U * binomial(n, 2) - (u #= + (U / 2) * (num_colors - 1) =#) * n
+		# e0(n, u) = U * binomial(n, 2) - (u #= + (U / 2) * (num_colors - 1) =#) * n
+		e0(n, u) = U * binomial(n, 2) - (u + (U / 2) * (num_colors - 1)) * n
 		weighted_sum(u, f) = sum(binomial(num_colors, n) * f(n) * exp(-B * e0(n, u)) for n in 0:num_colors)
 		z0(u) = weighted_sum(u, n -> 1)
 		rho(u) = (1/z0(u)) * weighted_sum(u, n -> n)
-		energy(u) = (1/z0(u)) * weighted_sum(u, n -> e0(n, u) #= + (u + (U/2) * (num_colors - 1)) *  n =#)
+		# energy(u) = (1/z0(u)) * weighted_sum(u, n -> e0(n, u) #= + (u + (U/2) * (num_colors - 1)) *  n =#)
+		energy(u) = (1/z0(u)) * weighted_sum(u, n -> e0(n, u) + (u + (U/2) * (num_colors - 1)) * n)
 		overlays["Actual Energy"] = energy
-		overlays["Actual Entropy"] = u -> log(z0(u)) + B * (energy(u) #= - (u + (U/2) * (num_colors - 1)) * rho(u) =#)
+		# overlays["Actual Entropy"] = u -> log(z0(u)) + B * (energy(u) #= - (u + (U/2) * (num_colors - 1)) * rho(u) =#)
+		overlays["Actual Entropy"] = u -> log(z0(u)) + B * (energy(u) - (u + (U/2) * (num_colors - 1)) * rho(u))
 	end
 
 	"""
@@ -304,11 +307,12 @@ function (@main)(args)
 	@info "Computing observables over range of u..."
 
 	u_range = u_min:u_step:u_max
+	u_shift = (U/2) * (num_colors - 1)  # Shift observables so that density=N/2 at u=0
 	# Create a new container to store the observable values at each u
 	observable_values = create_observable_data_map(true, true)
 	for u in u_range
 		# Re-weight the data according to the new u value
-		weight_correction = exp.(-B * (-(u - u_test)) .* n_fermion_data)
+		weight_correction = exp.(-B * (-(u - u_test + u_shift)) .* n_fermion_data)
 
 		# Compute the partition function
 		Z = sum(weight_correction .* weights)
@@ -319,7 +323,7 @@ function (@main)(args)
 		for (observable_name, observable_data) in observable_data
 			if observable_name == "Energy"
 				# The energy depends on u, so we have to update it
-				observable_data = @. observable_data + ((-(u - u_test)) * n_fermion_data)
+				observable_data = @. observable_data + ((-(u - u_test + u_shift)) * n_fermion_data)
 				@debug begin "  Updated Energy data: $observable_data" end
 			elseif observable_name == "Entropy"
 				continue
