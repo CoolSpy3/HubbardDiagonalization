@@ -71,7 +71,7 @@ function (@main)(args)
 
 	# Observables that can be calculated from other observables
 	derived_observables = Dict{String, Function}()
-	derived_observables["m^2"] = observable_data -> @. observable_data["Num_Particles"] - 2 * observable_data["Filled States"]
+	derived_observables["Local Moment"] = observable_data -> @. observable_data["Num_Particles"] - 2 * observable_data["Filled States"]
 	derived_observables["Density"] = observable_data -> observable_data["Num_Particles"] ./ Graphs.num_sites(graph)
 	derived_observables["Entropy"] = _ -> Float64[]  # Will be handled specially
 
