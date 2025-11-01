@@ -309,42 +309,57 @@ function (@main)(args)
 	u_range = u_min:u_step:u_max
 	u_shift = (U/2) * (num_colors - 1)  # Shift observables so that density=N/2 at u=0
 	# Create a new container to store the observable values at each u
-	observable_values = create_observable_data_map(true, true)
+	computed_observable_values = create_observable_data_map(true, true)
 	for u in u_range
+		# The value that has to be added to u_test to shift to the desired u
+		u_datapoint_shift = u - u_test + u_shift
+
 		# Re-weight the data according to the new u value
-		weight_correction = exp.(-B * (-(u - u_test + u_shift)) .* n_fermion_data)
+		weight_correction = exp.((-B * -u_datapoint_shift) .* n_fermion_data)
 
 		# Compute the partition function
 		Z = sum(weight_correction .* weights)
 
-		@debug begin "u=$u, weight_corrections=$weight_correction" end
+		@debug begin "u=$u, weight_corrections=$weight_correction, Z=$Z" end
 
 		# Compute each observable
-		for (observable_name, observable_data) in observable_data
+		hamiltonian_expectation = 0
+		for (observable_name, observable_values) in observable_data
 			if observable_name == "Energy"
-				# The energy depends on u, so we have to update it
-				observable_data = @. observable_data + ((-(u - u_test + u_shift)) * n_fermion_data)
-				@debug begin "  Updated Energy data: $observable_data" end
+				# Now, update the energy. The actual energy is H + u * N, so it works out to
+				observable_values = (-u_test * n_fermion_data) .+ observable_values
+				@debug begin "  Updated Energy data: $observable_values, Hamiltonian Expectation: $hamiltonian_expectation" end
+
+				# While we're here, calculate the entropy
+				# The expectation value of the Hamiltonian depends on u, so we have to shift it here
+				hamiltonian_values = (-u_datapoint_shift * n_fermion_data) .+ observable_values
+				# Store the expectation value so we can use it to calculate the entropy later
+				hamiltonian_expectation = sum(@. weight_correction * weights * hamiltonian_values) / Z
+				entropy_expectation = hamiltonian_expectation * B + log(Z)
+				push!(computed_observable_values["Entropy"], entropy_expectation)
+				@debug begin "  Entropy: $entropy_expectation" end
 			elseif observable_name == "Entropy"
+				# Calculated above
 				continue
 			end
+
 			# Compute the expectation value of each observable
-			expectation_value = sum(@. weight_correction * weights * observable_data) / Z
-			push!(observable_values[observable_name], expectation_value)
+			expectation_value = sum(@. weight_correction * weights * observable_values) / Z
+			@debug begin "  $observable_name: $expectation_value" end
+			push!(computed_observable_values[observable_name], expectation_value)
 		end
 
 		for (overlay_name, overlay_function) in overlays
-			push!(observable_values[overlay_name], overlay_function(u))
+			push!(computed_observable_values[overlay_name], overlay_function(u))
 		end
 
 		# Do this at the end to ensure we know the energy value
-		push!(observable_values["Entropy"], observable_values["Energy"][end] * B + log(Z))
 	end
 
 	@info "Exporting observable data..."
 
 	Base.Filesystem.mkpath("output")
-	CSV.write("output/observable_data.csv", merge(Dict("u" => u_range), observable_values))
+	CSV.write("output/observable_data.csv", merge(Dict("u" => u_range), computed_observable_values))
 
 	@info "Plotting observables..."
 
@@ -357,7 +372,7 @@ function (@main)(args)
 			size=(2000,2000)
 		)
 	# Plot each observable
-	for (name, values) in observable_values
+	for (name, values) in computed_observable_values
 		graph = plot!(graph, u_range, values, labels=name)
 	end
 
