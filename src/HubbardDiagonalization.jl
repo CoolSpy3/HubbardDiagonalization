@@ -52,6 +52,8 @@ function (@main)(args)
 	u_min::Float64 = plot_config["u_min"]
 	u_max::Float64 = plot_config["u_max"]
 	u_step::Float64 = plot_config["u_step"]
+	plot_width::Int = plot_config["width"]
+	plot_height::Int = plot_config["height"]
 
 	graph_config = config["graph"]
 	graph = linear_chain(graph_config["num_sites"])
@@ -369,7 +371,7 @@ function (@main)(args)
 			ylabel="Observable Value",
 			title="t=$t, T=$T, U=$U, num_sites=$(num_sites), num_colors=$(num_colors)",
 			legend=:topright,
-			size=(2000,2000)
+			size=(plot_width, plot_height)
 		)
 	# Plot each observable
 	for (name, values) in computed_observable_values

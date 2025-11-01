@@ -10,6 +10,8 @@ U = 1.0
 u_min = -5
 u_max = 5
 u_step = 0.01
+width = 1000
+height = 800
 
 [graph]
 num_sites = 1
