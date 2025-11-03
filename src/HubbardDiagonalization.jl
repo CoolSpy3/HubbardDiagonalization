@@ -325,21 +325,19 @@ function (@main)(args)
 		@debug begin "u=$u, weight_corrections=$weight_correction, Z=$Z" end
 
 		# Compute each observable
-		hamiltonian_expectation = 0
 		for (observable_name, observable_values) in observable_data
 			if observable_name == "Energy"
-				# Now, update the energy. The actual energy is H + u * N, so it works out to
+				# Now, update the energy. The free energy is H + u * N, so it works out to
 				observable_values = (-u_test * n_fermion_data) .+ observable_values
-				@debug begin "  Updated Energy data: $observable_values, Hamiltonian Expectation: $hamiltonian_expectation" end
+				@debug begin "  Updated Energy data: $observable_values" end
 
 				# While we're here, calculate the entropy
 				# The expectation value of the Hamiltonian depends on u, so we have to shift it here
-				hamiltonian_values = (-u_datapoint_shift * n_fermion_data) .+ observable_values
-				# Store the expectation value so we can use it to calculate the entropy later
-				hamiltonian_expectation = sum(@. weight_correction * weights * hamiltonian_values) / Z
-				entropy_expectation = hamiltonian_expectation * B + log(Z)
+				internal_energy_values = (-u_datapoint_shift * n_fermion_data) .+ observable_values
+				internal_energy_expectation = sum(@. weight_correction * weights * internal_energy_values) / Z
+				entropy_expectation = internal_energy_expectation * B + log(Z)
 				push!(computed_observable_values["Entropy"], entropy_expectation)
-				@debug begin "  Entropy: $entropy_expectation" end
+				@debug begin "  Entropy: $entropy_expectation (Internal Energy Values: $internal_energy_values Internal Energy Expectation: $internal_energy_expectation)" end
 			elseif observable_name == "Entropy"
 				# Calculated above
 				continue
