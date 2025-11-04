@@ -68,7 +68,7 @@ function (@main)(args)
 	observables = Dict{String, Function}()
 
 	observables["Num_Particles"] = state -> sum(count_ones(color) for color in state)
-	observables["Filled States"] = state -> count_ones(reduce(&, state))
+	observables["Double Occupancy"] = state -> count_ones(reduce(&, state))
 
 	observables["Energy"] = _ -> 0.0  # Will be handled specially
 
