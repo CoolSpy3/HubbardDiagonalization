@@ -60,6 +60,7 @@ function (@main)(args)
 	num_sites = Graphs.num_sites(graph)
 
 	@info "Initialized with t=$t, T=$T, u_step=$u_step, U=$(U)"
+	@debug begin "  Graph edges: $(Graphs.edges(graph))" end
 
 	B = 1/T
 
@@ -149,6 +150,7 @@ function (@main)(args)
 			for (i, state_i) in enumerate(enumerate_multistate(num_sites, color_configuration))
 				# Note: We're going to cut this inner loop off early since the matrix is symmetric
 				for (j, state_j) in enumerate(enumerate_multistate(num_sites, color_configuration))
+					@debug begin "Computing H[$i,$j] between states:\n  state_i=$(digits.(state_i, base=2, pad=num_sites))\n  state_j=$(digits.(state_j, base=2, pad=num_sites))" end
 					if i == j  # Because enumerate_multistate is consistent, if the indices are equal, the states are equal
 						# Diagonal element
 						H[i,i] = -u_test * N_fermions
@@ -206,6 +208,8 @@ function (@main)(args)
 						site_2 = findlast(hopped_sites .== 1)
 						@assert site_1 != site_2
 
+						@debug begin "Considering hop of color $hopped_color from site $site_1 to site $site_2" end
+
 						# Verify that the hop is allowed by the graph
 						if has_edge(graph, site_1, site_2)
 							# If so, the sign will be flipped if an odd number of
@@ -229,6 +233,7 @@ function (@main)(args)
 							# matter if we include them in the mask or not.
 							bitween_mask = ((1 << site_2) - 1) & ~((1 << site_1) - 1)
 							sign = iseven(count_ones(occupied_sites & bitween_mask)) ? 1 : -1
+							@debug begin "  Hop is allowed by graph! sign=$sign" end
 							H[i,j] = sign * (-t)
 						end
 					end
