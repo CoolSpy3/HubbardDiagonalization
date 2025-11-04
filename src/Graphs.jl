@@ -20,7 +20,7 @@ function linear_chain(n_sites::Int)
 		push!(edges, (i, i+1))
 	end
 	if n_sites > 2
-		push!(edges, (n_sites, 1))  # Periodic boundary conditions
+		push!(edges, (1, n_sites))  # Periodic boundary conditions
 	end
 	return Graph(n_sites, edges)
 end
