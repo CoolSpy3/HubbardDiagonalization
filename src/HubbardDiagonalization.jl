@@ -68,13 +68,21 @@ function (@main)(args)
 	observables = Dict{String, Function}()
 
 	observables["Num_Particles"] = state -> sum(count_ones(color) for color in state)
-	observables["Double Occupancy"] = state -> count_ones(reduce(&, state))
+	observables["Filled States"] = state -> count_ones(reduce(&, state))
 
 	observables["Energy"] = _ -> 0.0  # Will be handled specially
 
+	observables["P_a"] = state -> count_ones(state[1]) * prod((1 - count_ones(state[c]) for c in 2:num_colors), init = 1)
+	if num_colors >= 2
+		observables["P_ab"] = state -> prod(count_ones(state[c]) for c in 1:2) * prod((1 - count_ones(state[c]) for c in 3:num_colors), init = 1)
+	end
+	if num_colors >= 3
+		observables["P_abc"] = state -> prod(count_ones(state[c]) for c in 1:3) * prod((1 - count_ones(state[c]) for c in 4:num_colors), init = 1)
+	end
+
 	# Observables that can be calculated from other observables
 	derived_observables = Dict{String, Function}()
-	derived_observables["Local Moment"] = observable_data -> @. observable_data["Num_Particles"] - 2 * observable_data["Double Occupancy"]
+	derived_observables["Local Moment"] = observable_data -> @. observable_data["Num_Particles"] - 2 * observable_data["Filled States"]
 	derived_observables["Density"] = observable_data -> observable_data["Num_Particles"] ./ Graphs.num_sites(graph)
 	derived_observables["Entropy"] = _ -> Float64[]  # Will be handled specially
 
