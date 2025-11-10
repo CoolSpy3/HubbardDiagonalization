@@ -79,7 +79,7 @@ function (@main)(args)
                 t = 1.0,
                 T = T,
                 u_test = 0.0,
-                U = U,
+                U = U / 4.0,
             )
 
             # Temporarily disable info logging for cleaner test output
