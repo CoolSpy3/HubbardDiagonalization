@@ -1,6 +1,7 @@
 module HubbardDiagonalization
 
 export main
+export default_observables, diagonalize_and_compute_observables, export_observable_data
 
 # Include our submodules
 include("Graphs.jl")
@@ -27,6 +28,22 @@ if use_unicode_plots
 	unicodeplots()
 end
 
+@kwdef struct TestConfiguration
+	num_colors::Int
+	t::Float64
+	T::Float64
+	u_test::Float64
+	U::Float64
+end
+
+function convert_strings_to_symbols(dict::Dict{String,Any})
+	new_dict = Dict{Symbol,Any}()
+	for (key, value) in dict
+		new_dict[Symbol(key)] = value
+	end
+	return new_dict
+end
+
 function (@main)(args)
 	# Install our own logger for the duration of the program
 	old_logger = Logging.global_logger(Logging.ConsoleLogger(stderr, Logging.Debug))
@@ -38,33 +55,33 @@ function (@main)(args)
 		Logging.disable_logging(Logging.Debug)
 	end
 
-	# Load Parameters
+	# Parse configuration file
 	config = TOML.parsefile("SimulationConfig.toml")
+
 	params = config["parameters"]
-	num_colors::Int = params["num_colors"]
-
-	t::Float64 = params["t"]
-	T::Float64 = params["T"]
-	u_test::Float64 = params["u_test"]
-	U::Float64 = params["U"]
-
 	plot_config = config["plot"]
-	u_min::Float64 = plot_config["u_min"]
-	u_max::Float64 = plot_config["u_max"]
-	u_step::Float64 = plot_config["u_step"]
-	plot_width::Int = plot_config["width"]
-	plot_height::Int = plot_config["height"]
-
 	graph_config = config["graph"]
+
+	test_config = TestConfiguration(;convert_strings_to_symbols(params)...)
+	u_vals = plot_config["u_min"]:plot_config["u_step"]:plot_config["u_max"]
 	graph = linear_chain(graph_config["num_sites"])
-	num_sites = Graphs.num_sites(graph)
 
-	@info "Initialized with t=$t, T=$T, u_step=$u_step, U=$(U)"
-	@debug begin "  Graph edges: $(Graphs.edges(graph))" end
+	observables, derived_observables, overlays = default_observables(test_config.num_colors, graph)
+	@info "Defined observables: $(union(keys(observables), keys(derived_observables), keys(overlays)))"
 
-	B = 1/T
+	observable_data = diagonalize_and_compute_observables(u_vals, test_config, graph, observables, derived_observables, overlays)
 
-	# Observables
+	export_observable_data(plot_config["width"], plot_config["height"], u_vals, observable_data, test_config, graph)
+
+	@info "Done."
+
+	# Restore the old logger after we're done
+	Logging.global_logger(old_logger)
+
+	return 0
+end
+
+function default_observables(num_colors::Int, graph::Graph)
 	observables = Dict{String, Function}()
 
 	observables["Num_Particles"] = state -> sum(count_ones(color) for color in state)
@@ -89,7 +106,7 @@ function (@main)(args)
 	# Additional Plots that can be directly calculated
 	overlays = Dict{String, Function}()
 
-	if num_sites == 1
+	if Graphs.num_sites(graph) == 1
 		# Single-site Hubbard model exact solutions
 		# e0(n, u) = U * binomial(n, 2) - (u #= + (U / 2) * (num_colors - 1) =#) * n
 		e0(n, u) = U * binomial(n, 2) - (u + (U / 2) * (num_colors - 1)) * n
@@ -102,6 +119,24 @@ function (@main)(args)
 		# overlays["Actual Entropy"] = u -> log(z0(u)) + B * (energy(u) #= - (u + (U/2) * (num_colors - 1)) * rho(u) =#)
 		overlays["Actual Entropy"] = u -> log(z0(u)) + B * (energy(u) - (u + (U/2) * (num_colors - 1)) * rho(u))
 	end
+
+	return observables, derived_observables, overlays
+end
+
+function diagonalize_and_compute_observables(u_vals::AbstractVector{Float64}, config::TestConfiguration, graph::Graph, observables::Dict{String, Function}, derived_observables::Dict{String, Function}, overlays::Dict{String, Function})
+	# Load parameters into the local scope
+	num_colors = config.num_colors
+	t = config.t
+	T = config.T
+	u_test = config.u_test
+	U = config.U
+
+	num_sites = Graphs.num_sites(graph)
+
+	@info "Initialized with t=$t, T=$T, u_vals=$u_vals, U=$(U)"
+	@debug begin "  Graph edges: $(Graphs.edges(graph))" end
+
+	B = 1/T
 
 	"""
 		create_observable_data_map(include_derived::Bool, include_overlays::Bool)
@@ -129,8 +164,6 @@ function (@main)(args)
 		end
 		return map
 	end
-
-	@info "Defined observables: $(union(keys(observables), keys(derived_observables), keys(overlays)))"
 
 	N_max_fermions = num_colors * num_sites
 	@debug "N_max_fermions=$N_max_fermions"
@@ -321,11 +354,10 @@ function (@main)(args)
 
 	@info "Computing observables over range of u..."
 
-	u_range = u_min:u_step:u_max
 	u_shift = (U/2) * (num_colors - 1)  # Shift observables so that density=N/2 at u=0
 	# Create a new container to store the observable values at each u
 	computed_observable_values = create_observable_data_map(true, true)
-	for u in u_range
+	for u in u_vals
 		# The value that has to be added to u_test to shift to the desired u
 		u_datapoint_shift = u - u_test + u_shift
 
@@ -365,40 +397,36 @@ function (@main)(args)
 		for (overlay_name, overlay_function) in overlays
 			push!(computed_observable_values[overlay_name], overlay_function(u))
 		end
-
-		# Do this at the end to ensure we know the energy value
 	end
 
+	return computed_observable_values
+end
+
+function export_observable_data(plot_width::Int, plot_height::Int, u_vals::AbstractVector{Float64}, observable_data::Dict{String, Vector{Float64}}, config::TestConfiguration, graph::Graph)
 	@info "Exporting observable data..."
 
 	Base.Filesystem.mkpath("output")
-	CSV.write("output/observable_data.csv", merge(Dict("u" => u_range), computed_observable_values))
-
+	CSV.write("output/observable_data.csv", merge(Dict("u" => u_vals), observable_data))
 	@info "Plotting observables..."
 
 	# Initialize the plot
 	graph = plot(
 			xlabel="u",
 			ylabel="Observable Value",
-			title="t=$t, T=$T, U=$U, num_sites=$(num_sites), num_colors=$(num_colors)",
+			title="t=$(config.t), T=$(config.T), U=$(config.U), num_sites=$(num_sites(graph)), num_colors=$(config.num_colors)",
 			legend=:topright,
 			size=(plot_width, plot_height)
 		)
 	# Plot each observable
-	for (name, values) in computed_observable_values
-		graph = plot!(graph, u_range, values, labels=name)
+	for (name, values) in observable_data
+		graph = plot!(graph, u_vals, values, labels=name)
 	end
 
 	# Save the plot
 	savefig(graph, "output/observable_data.png")
 	# display(graph)
 
-	@info "Done."
-
-	# Restore the old logger after we're done
-	Logging.global_logger(old_logger)
-
-	return 0
+	return
 end
 
 end
