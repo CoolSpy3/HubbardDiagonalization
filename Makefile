@@ -1,4 +1,4 @@
-.PHONY: clean debug default run setup
+.PHONY: clean debug default format run setup
 
 default: run
 
@@ -8,6 +8,9 @@ clean:
 debug:
 	@mkdir -p output
 	@julia --project=. -m HubbardDiagonalization --debug 2>&1 | tee output/debug.log
+
+format:
+	@julia --project=. -e 'import JuliaFormatter; JuliaFormatter.format("."; always_for_in = true)'
 
 run:
 	@julia --project=. -m HubbardDiagonalization
