@@ -7,9 +7,13 @@ Here is a basic overview of the project layout.
   |- README.md              # Project overview documentation
   |- RepositoryLayout.md    # This file!
   |- SimulationConfig.toml  # Simulation parameters
-  \- src/
-    |- graphs.jl              # Defines a basic undirected graph structure and some common graph types.
-    |- main.jl                # Entrypoint and main logic
-    |- state_enumeration.jl   # Helper functions for enumerating states under various constraints
-    \- symmetric_matrices.jl  # Defines a SymmetricMatrix type that stores only the lower-triangular part of the matrix.
+  |- src/                   # Main project source files
+  | |- graphs.jl              # Defines a basic undirected graph structure and some common graph types.
+  | |- main.jl                # Entrypoint and main logic
+  | |- state_enumeration.jl   # Helper functions for enumerating states under various constraints
+  | \- symmetric_matrices.jl  # Defines a SymmetricMatrix type that stores only the lower-triangular part of the matrix.
+  \- tests/                 # Test files
+    \- n2_grids             # Test output against sample 2x2 grid results
+      |- N2_grids.zip       # Test data
+      \- TestN2.jl       # Test script
 ```
