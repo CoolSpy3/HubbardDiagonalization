@@ -2,7 +2,7 @@
 
 julia_version = "1.12.1"
 manifest_format = "2.0"
-project_hash = "114f6d2c1438b751e7736ff871c70a7ab7b9887f"
+project_hash = "2d07ab3e03569477465958c3aacabbeba1252734"
 
 [[deps.AliasTables]]
 deps = ["PtrArrays", "Random"]
@@ -309,7 +309,7 @@ uuid = "2e76f6c2-a576-52d4-95c1-20adfe4de566"
 version = "8.5.1+0"
 
 [[deps.HubbardDiagonalization]]
-deps = ["CSV", "LinearAlgebra", "Logging", "Plots", "TOML", "UnicodePlots"]
+deps = ["CSV", "JuliaFormatter", "LinearAlgebra", "Logging", "Plots", "TOML", "UnicodePlots", "ZipFile"]
 path = "."
 uuid = "aa2880e1-af8e-48e8-9ccc-27163daa77df"
 version = "0.1.0"
@@ -1147,6 +1147,12 @@ deps = ["Artifacts", "JLLWrappers", "Libdl"]
 git-tree-sha1 = "a63799ff68005991f9d9491b6e95bd3478d783cb"
 uuid = "c5fb5394-a638-5e4d-96e5-b29de1b5cf10"
 version = "1.6.0+0"
+
+[[deps.ZipFile]]
+deps = ["Libdl", "Printf", "Zlib_jll"]
+git-tree-sha1 = "f492b7fe1698e623024e873244f10d89c95c340a"
+uuid = "a5390f91-8eb1-5f08-bee0-b1d1ffed6cea"
+version = "0.10.1"
 
 [[deps.Zlib_jll]]
 deps = ["Libdl"]

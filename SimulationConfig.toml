@@ -14,4 +14,4 @@ width = 1000
 height = 800
 
 [graph]
-num_sites = 1
+num_sites = 4
