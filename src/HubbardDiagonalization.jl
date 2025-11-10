@@ -1,6 +1,8 @@
 module HubbardDiagonalization
 
 export main
+
+export TestConfiguration
 export default_observables, diagonalize_and_compute_observables, export_observable_data
 
 # Include our submodules
