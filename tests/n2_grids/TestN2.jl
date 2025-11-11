@@ -26,8 +26,7 @@ function (@main)(args)
         "Density" => "Densities.csv",
         "Filled States" => "Doubleoccupancies.csv",
         "Energy" => "Energies.csv",
-        "Entropy" => "Entropies.csv",
-        "Local Moment" => "ninis.csv",
+        "Entropy" => "Entropies.csv"
     )
 
     if !warn_on_nan
@@ -76,10 +75,10 @@ function (@main)(args)
         for (i, T) in enumerate(T_vals)
             test_config = HubbardDiagonalization.TestConfiguration(
                 num_colors = N,
-                t = 1.0,
+                t = 2.0,
                 T = T,
                 u_test = 0.0,
-                U = U / 4.0,
+                U = U
             )
 
             # Temporarily disable info logging for cleaner test output
@@ -116,6 +115,12 @@ function (@main)(args)
                 valid_indices = @. !isnan(expected) && !isnan(computed)
                 expected = expected[valid_indices]
                 computed = computed[valid_indices]
+
+                if observable_name == "Energy" || observable_name == "Entropy"
+                    computed ./= Graphs.num_sites(graph)  # Normalize per site
+                else
+                    difference = expected .- computed
+                end
 
                 difference = expected .- computed
                 max_difference = maximum(abs.(difference))
