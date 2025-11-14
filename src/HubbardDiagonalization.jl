@@ -64,15 +64,16 @@ function (@main)(args)
     graph_config = config["graph"]
 
     test_config = TestConfiguration(; convert_strings_to_symbols(params)...)
+    t_vals = plot_config["T_min"]:plot_config["T_step"]:plot_config["T_max"]
     u_vals = plot_config["u_min"]:plot_config["u_step"]:plot_config["u_max"]
     graph = linear_chain(graph_config["num_sites"])
 
     observables, derived_observables, overlays =
-        default_observables(test_config.num_colors, graph)
+        default_observables(test_config, graph)
     @info "Defined observables: $(union(keys(observables), keys(derived_observables), keys(overlays)))"
 
     observable_data = diagonalize_and_compute_observables(
-        [0.1],  #  TODO
+        t_vals,
         u_vals,
         test_config,
         graph,
@@ -82,8 +83,8 @@ function (@main)(args)
     )
 
     export_observable_data(
-        plot_config["width"],
-        plot_config["height"],
+        plot_config,
+        t_vals,
         u_vals,
         observable_data,
         test_config,
@@ -98,7 +99,9 @@ function (@main)(args)
     return 0
 end
 
-function default_observables(num_colors::Int, graph::Graph)
+function default_observables(test_config::TestConfiguration, graph::Graph)
+    num_colors = test_config.num_colors
+    U = test_config.U
     num_sites = Graphs.num_sites(graph)
 
     observables = Dict{String,Function}()
@@ -196,7 +199,8 @@ function diagonalize_and_compute_observables(
     """
     # We're going to need a few of these. Might as well make it a function.
     function create_observable_data_map(include_derived::Bool, include_overlays::Bool, size::Int...)
-        map = Dict{String,AbstractArray{Float64}}()
+        storage_type = typeof(zeros(Float64, size))
+        map = Dict{String,storage_type}()
         for observable_name in keys(observables)
             map[observable_name] = zeros(Float64, size)
         end
@@ -508,35 +512,81 @@ function diagonalize_and_compute_observables(
 end
 
 function export_observable_data(
-    plot_width::Int,
-    plot_height::Int,
+    plot_config::Dict{String,Any},
+    T_vals::AbstractVector{Float64},
     u_vals::AbstractVector{Float64},
-    observable_data::Dict{String,Vector{Float64}},
+    observable_data::Dict{String,Matrix{Float64}},
     config::TestConfiguration,
     graph::Graph,
 )
     @info "Exporting observable data..."
 
+    num_sites = Graphs.num_sites(graph)
+    plot_width = plot_config["width"]
+    plot_height = plot_config["height"]
+
     Base.Filesystem.mkpath("output")
-    CSV.write("output/observable_data.csv", merge(Dict("u" => u_vals), observable_data))
+    for (observable_name, data_matrix) in observable_data
+        labeled_matrix = hcat(["u/T", T_vals...], vcat(u_vals', data_matrix))
+        CSV.write("output/$(observable_name).csv", CSV.Tables.table(labeled_matrix))
+    end
     @info "Plotting observables..."
 
-    # Initialize the plot
-    graph = plot(
-        xlabel = "u",
-        ylabel = "Observable Value",
-        title = "t=$(config.t), T=$(config.T), U=$(config.U), num_sites=$(num_sites(graph)), num_colors=$(config.num_colors)",
-        legend = :topright,
-        size = (plot_width, plot_height),
-    )
-    # Plot each observable
-    for (name, values) in observable_data
-        graph = plot!(graph, u_vals, values, labels = name)
+    # Create plots for each T value
+    for T in plot_config["T_fixed_plots"]
+        T_index = findall(x -> isapprox(x, T; atol=1e-8), T_vals)
+        if length(T_index) == 0
+            @warn "T=$T not found in T_vals; skipping fixed-T plot."
+            continue
+        elseif length(T_index) > 1
+            @warn "Multiple values found for T=$T; using first index."
+        end
+        T_index = T_index[1]
+
+        # Initialize the plot
+        graph = plot(
+            xlabel = "u",
+            ylabel = "Observable Value",
+            title = "t=$(config.t), T=$T, U=$(config.U), num_sites=$num_sites, num_colors=$(config.num_colors)",
+            legend = :topright,
+            size = (plot_width, plot_height),
+        )
+        # Plot each observable
+        for (name, values) in observable_data
+            graph = plot!(graph, u_vals, values[T_index, :], labels = name)
+        end
+
+        # Save the plot
+        savefig(graph, "output/observable_data_T_$T.png")
     end
 
-    # Save the plot
-    savefig(graph, "output/observable_data.png")
-    # display(graph)
+    # And create a plot at u_test
+    for u in plot_config["u_fixed_plots"]
+        u_index = findall(x -> isapprox(x, u; atol=1e-8), u_vals)
+        if length(u_index) == 0
+            @warn "u=$u not found in u_vals; skipping fixed-u plot."
+            continue
+        elseif length(u_index) > 1
+            @warn "Multiple values found for u=$u; using first index."
+        end
+        u_index = u_index[1]
+
+        # Initialize the plot
+        graph = plot(
+            xlabel = "T",
+            ylabel = "Observable Value",
+            title = "t=$(config.t), u=$u, U=$(config.U), num_sites=$num_sites, num_colors=$(config.num_colors)",
+            legend = :topright,
+            size = (plot_width, plot_height),
+        )
+        # Plot each observable
+        for (name, values) in observable_data
+            graph = plot!(graph, T_vals, values[:, u_index], labels = name)
+        end
+
+        # Save the plot
+        savefig(graph, "output/observable_data_u_$u.png")
+    end
 
     return
 end

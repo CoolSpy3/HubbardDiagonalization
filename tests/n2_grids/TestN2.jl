@@ -51,7 +51,14 @@ function (@main)(args)
         N = parse(Int, parsed_name.captures[1])
         U = parse(Float64, parsed_name.captures[2])
 
-        observables = HubbardDiagonalization.default_observables(N, graph)
+        test_config = HubbardDiagonalization.TestConfiguration(
+            num_colors = N,
+            t = 2.0,
+            u_test = 0.0,
+            U = U
+        )
+
+        observables = HubbardDiagonalization.default_observables(test_config, graph)
 
         @info "Running tests for N=$N, U=$U..."
 
@@ -71,13 +78,6 @@ function (@main)(args)
             @assert size(expected) == (length(T_vals), length(u_vals)) "Expected data size mismatch for $results_file"
             expected_data[results_file] = expected
         end
-
-        test_config = HubbardDiagonalization.TestConfiguration(
-            num_colors = N,
-            t = 2.0,
-            u_test = 0.0,
-            U = U
-        )
 
         # Temporarily disable info logging for cleaner test output
         disable_logging(Logging.Info)
