@@ -28,18 +28,18 @@ Get the index in the internal data vector corresponding to the (i,j) entry of th
 """
 function index(mat::SymmetricMatrix, i::Int, j::Int)
     @assert i <= mat.size && j <= mat.size
-    # Convert upper-triangular indices to lower-triangular
+    # Convert lower-triangular indices to upper-triangular
     # (Because the matrix is symmetric, they refer to the same value)
-    if j > i
+    if j < i
         i, j = j, i
     end
     # Work around julia's 1-based indexing
     i -= 1
     j -= 1
-    # The number of elements in the ith row (0-indexed) is i+1, so the number of elements in
-    # all previous rows is the sum of the first i integers (i*(i+1)/2). Then add j to get the column offset,
+    # The number of elements in the jth column (0-indexed) is j+1, so the number of elements in
+    # all previous columns is the sum of the first j integers (j*(j+1)/2). Then add i to get the row offset,
     # and add 1 to convert back to 1-based indexing.
-    return ((i * (i + 1) ÷ 2) + j) + 1
+    return ((j * (j + 1) ÷ 2) + i) + 1
 end
 
 # Implement some core functions of the AbstractMatrix interface

@@ -99,6 +99,8 @@ function (@main)(args)
 end
 
 function default_observables(num_colors::Int, graph::Graph)
+    num_sites = Graphs.num_sites(graph)
+
     observables = Dict{String,Function}()
 
     observables["Num_Particles"] = state -> sum(count_ones(color) for color in state)
@@ -129,13 +131,13 @@ function default_observables(num_colors::Int, graph::Graph)
         observable_data ->
             @. observable_data["Num_Particles"] - 2 * observable_data["Filled States"]
     derived_observables["Density"] =
-        observable_data -> observable_data["Num_Particles"] ./ Graphs.num_sites(graph)
+        observable_data -> observable_data["Num_Particles"] ./ num_sites
     derived_observables["Entropy"] = _ -> Float64[]  # Will be handled specially
 
     # Additional Plots that can be directly calculated
     overlays = Dict{String,Function}()
 
-    if Graphs.num_sites(graph) == 1
+    if num_sites == 1
         # Single-site Hubbard model exact solutions
         # e0(n, u) = U * binomial(n, 2) - (u #= + (U / 2) * (num_colors - 1) =#) * n
         e0(n, u) = U * binomial(n, 2) - (u + (U / 2) * (num_colors - 1)) * n
@@ -250,7 +252,8 @@ function diagonalize_and_compute_observables(
                             # Set bits for colors **not** in the interaction to 1
                             color_mask = 1 .- color_mask
                             # For all colors not in the interaction, set all bits to 1 (mark all sites as occupied)
-                            color_mask = color_mask .* ((2 ^ num_sites) - 1)  # 1 -> (111...1), 0 -> 0
+                            filled_mask = ((2 ^ num_sites) - 1)  # Mask with all bits set to 1
+                            color_mask = color_mask .* filled_mask  # 1 -> (111...1), 0 -> 0
                             occupied_sites = state_i .| color_mask
                             # Take the bitwise AND across all colors to find sites occupied by both colors
                             occupied_sites = reduce(&, occupied_sites)
@@ -261,7 +264,7 @@ function diagonalize_and_compute_observables(
                         break  # No need to compute upper-triangular elements
                     else
                         # Off-diagonal element
-                        H[i, j] = 0.0
+                        H[j, i] = 0.0   # Use j,i to be efficient with column-major storage
 
                         # Hopping term
                         # First, compute the difference between the two states
@@ -291,8 +294,8 @@ function diagonalize_and_compute_observables(
 
                         # Get the sites involved in the hop
                         hopped_sites = digits(diff[hopped_color], base = 2, pad = num_sites)
-                        site_1 = findfirst(hopped_sites .== 1)
-                        site_2 = findlast(hopped_sites .== 1)
+                        site_1 = findfirst(isequal(1), hopped_sites)
+                        site_2 = findlast(isequal(1), hopped_sites)
                         @assert site_1 != site_2
 
                         @debug begin
@@ -326,7 +329,7 @@ function diagonalize_and_compute_observables(
                             @debug begin
                                 "  Hop is allowed by graph! sign=$sign"
                             end
-                            H[i, j] = sign * (-t)
+                            H[j, i] = sign * (-t)
                         end
                     end
                 end
@@ -345,7 +348,7 @@ function diagonalize_and_compute_observables(
             end
 
             # Diagonalize the Hamiltonian block
-            H_symmetric_view = LinearAlgebra.Symmetric(H, :L)
+            H_symmetric_view = LinearAlgebra.Symmetric(H, :U)
             # Annoyingly, eigen() forces us to store all the eigenvectors
             # in memory at once, but I can't find a good way around this
             # Even the builtin `eigvals`/`eigvecs` functions are just
