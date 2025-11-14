@@ -33,7 +33,6 @@ end
 @kwdef struct TestConfiguration
     num_colors::Int
     t::Float64
-    T::Float64
     u_test::Float64
     U::Float64
 end
@@ -73,6 +72,7 @@ function (@main)(args)
     @info "Defined observables: $(union(keys(observables), keys(derived_observables), keys(overlays)))"
 
     observable_data = diagonalize_and_compute_observables(
+        [0.1],  #  TODO
         u_vals,
         test_config,
         graph,
@@ -132,7 +132,7 @@ function default_observables(num_colors::Int, graph::Graph)
             @. observable_data["Num_Particles"] - 2 * observable_data["Filled States"]
     derived_observables["Density"] =
         observable_data -> observable_data["Num_Particles"] ./ num_sites
-    derived_observables["Entropy"] = _ -> Float64[]  # Will be handled specially
+    derived_observables["Entropy"] = observable_data -> zeros(Float64, size(observable_data["Num_Particles"])...)  # Will be handled specially
 
     # Additional Plots that can be directly calculated
     overlays = Dict{String,Function}()
@@ -141,23 +141,24 @@ function default_observables(num_colors::Int, graph::Graph)
         # Single-site Hubbard model exact solutions
         # e0(n, u) = U * binomial(n, 2) - (u #= + (U / 2) * (num_colors - 1) =#) * n
         e0(n, u) = U * binomial(n, 2) - (u + (U / 2) * (num_colors - 1)) * n
-        weighted_sum(u, f) =
+        weighted_sum(B, u, f) =
             sum(binomial(num_colors, n) * f(n) * exp(-B * e0(n, u)) for n in 0:num_colors)
-        z0(u) = weighted_sum(u, n -> 1)
-        rho(u) = (1/z0(u)) * weighted_sum(u, n -> n)
+        z0(B, u) = weighted_sum(B, u, n -> 1)
+        rho(B, u) = (1/z0(B, u)) * weighted_sum(B, u, n -> n)
         # energy(u) = (1/z0(u)) * weighted_sum(u, n -> e0(n, u) #= + (u + (U/2) * (num_colors - 1)) *  n =#)
-        energy(u) =
-            (1/z0(u)) * weighted_sum(u, n -> e0(n, u) + (u + (U/2) * (num_colors - 1)) * n)
+        energy(B, u) =
+            (1/z0(B, u)) * weighted_sum(B, u, n -> e0(n, u) + (u + (U/2) * (num_colors - 1)) * n)
         overlays["Actual Energy"] = energy
         # overlays["Actual Entropy"] = u -> log(z0(u)) + B * (energy(u) #= - (u + (U/2) * (num_colors - 1)) * rho(u) =#)
         overlays["Actual Entropy"] =
-            u -> log(z0(u)) + B * (energy(u) - (u + (U/2) * (num_colors - 1)) * rho(u))
+            (B, u) -> log(z0(B, u)) + B * (energy(B, u) - (u + (U/2) * (num_colors - 1)) * rho(B, u))
     end
 
     return observables, derived_observables, overlays
 end
 
 function diagonalize_and_compute_observables(
+    t_vals::AbstractVector{Float64},
     u_vals::AbstractVector{Float64},
     config::TestConfiguration,
     graph::Graph,
@@ -168,53 +169,61 @@ function diagonalize_and_compute_observables(
     # Load parameters into the local scope
     num_colors = config.num_colors
     t = config.t
-    T = config.T
     u_test = config.u_test
     U = config.U
 
+    # Compute some useful quantities
+    num_temps = length(t_vals)
+    num_us = length(u_vals)
     num_sites = Graphs.num_sites(graph)
+    B = 1 ./ t_vals
+    N_max_fermions = num_colors * num_sites
 
-    @info "Initialized with t=$t, T=$T, u_vals=$u_vals, U=$(U)"
+    @info "Initialized with t=$t, U=$(U), T_vals=$t_vals, u_vals=$u_vals"
     @debug begin
         "  Graph edges: $(Graphs.edges(graph))"
     end
-
-    B = 1/T
+    @debug "N_max_fermions=$N_max_fermions"
 
     """
-    	create_observable_data_map(include_derived::Bool, include_overlays::Bool)
+    	create_observable_data_map(include_derived::Bool, include_overlays::Bool, size::Int...)
 
     include_derived: Whether to include derived observables in the map.
     include_overlays: Whether to include overlay functions in the map.
+    size: The size of the vectors to create for each observable.
 
     A convenience function to create an empty map from observable names to data vectors.
     """
     # We're going to need a few of these. Might as well make it a function.
-    function create_observable_data_map(include_derived::Bool, include_overlays::Bool)
-        map = Dict{String,Vector{Float64}}()
+    function create_observable_data_map(include_derived::Bool, include_overlays::Bool, size::Int...)
+        map = Dict{String,AbstractArray{Float64}}()
         for observable_name in keys(observables)
-            map[observable_name] = Float64[]
+            map[observable_name] = zeros(Float64, size)
         end
         if include_derived
             for derived_name in keys(derived_observables)
-                map[derived_name] = Float64[]
+                map[derived_name] = zeros(Float64, size)
             end
         end
         if include_overlays
             for overlay_name in keys(overlays)
-                map[overlay_name] = Float64[]
+                map[overlay_name] = zeros(Float64, size)
             end
         end
         return map
     end
 
-    N_max_fermions = num_colors * num_sites
-    @debug "N_max_fermions=$N_max_fermions"
-
     # Initialize some containers to store the generated data
-    weights = Float64[]  # Weights for each state
-    n_fermion_data = Int[]  # Number of fermions for each state (used for re-weighting)
-    observable_data = create_observable_data_map(false, false)
+    num_computed_states = sum(
+        prod(binomial(num_sites, n) for n in color_configuration)
+        for N_fermions in 0:N_max_fermions
+        for color_configuration in color_configurations(N_fermions, num_sites, num_colors)
+    )
+    weights = zeros(Float64, num_temps, num_computed_states)  # Weights for each state
+    n_fermion_data = zeros(Int, num_computed_states)  # Number of fermions for each state (used for re-weighting)
+    observable_data = create_observable_data_map(false, false, num_computed_states)
+
+    state_global_index = 1  # Global index to keep track of where we are in the weights/observable_data arrays
 
     @info "Computing Hamiltonian blocks and observables..."
     # The number of fermions and the color configuration are conserved over tunneling,
@@ -224,7 +233,7 @@ function diagonalize_and_compute_observables(
             # Size of the Hamiltonian block
             L = prod(binomial(num_sites, n) for n in color_configuration)
             H = SymmetricMatrix(L)  # Use custom "SymmetricMatrix" type to save memory at the cost of speed
-            observables_basis = create_observable_data_map(false, false)  # Compute the observables for each state as we build the matrix
+            observables_basis = create_observable_data_map(false, false, L)  # Compute the observables for each state as we build the matrix
 
             # Compute Hamiltonian matrix elements between all pairs of states
             # enumerate_multistate returns elements in a consistent order, so
@@ -253,7 +262,7 @@ function diagonalize_and_compute_observables(
                             color_mask = 1 .- color_mask
                             # For all colors not in the interaction, set all bits to 1 (mark all sites as occupied)
                             filled_mask = ((2 ^ num_sites) - 1)  # Mask with all bits set to 1
-                            color_mask = color_mask .* filled_mask  # 1 -> (111...1), 0 -> 0
+                            color_mask = color_mask * filled_mask  # 1 -> (111...1), 0 -> 0
                             occupied_sites = state_i .| color_mask
                             # Take the bitwise AND across all colors to find sites occupied by both colors
                             occupied_sites = reduce(&, occupied_sites)
@@ -337,7 +346,7 @@ function diagonalize_and_compute_observables(
                 # Now that we've constructed the row for state_i, compute the observables
                 for (observable_name, observable_function) in observables
                     # Pre-compute the observable for this basis state
-                    push!(observables_basis[observable_name], observable_function(state_i))
+                    observables_basis[observable_name][i] = observable_function(state_i)
                 end
             end
 
@@ -373,28 +382,30 @@ function diagonalize_and_compute_observables(
                 # eigen() returns normalized eigenvectors, so we don't need to do any normalization here
 
                 # Weight data of this state in the partition function
-                weight = num_permutations * exp(-B * eigen_val)
-                push!(weights, weight)
-                push!(n_fermion_data, N_fermions)
+                weight = num_permutations * exp.(-B * eigen_val)
+                weights[:, state_global_index] = weight
+                n_fermion_data[state_global_index] = N_fermions
 
                 # Compute each observable for this state
                 for (observable_name, observable_basis_data) in observables_basis
                     if observable_name == "Energy"
                         # The energy is just the eigenvalue
-                        push!(observable_data[observable_name], eigen_val)
+                        observable_data[observable_name][state_global_index] = eigen_val
                     else
                         # Because we already computed the observables for each basis state,
                         # we can just do a weighted sum over those based on the eigenvector components
                         observable_value =
                             sum(@. observable_basis_data * eigen_vec * eigen_vec)
-                        push!(observable_data[observable_name], observable_value)
+                        observable_data[observable_name][state_global_index] = observable_value
                     end
                 end
+                state_global_index += 1
             end
         end
     end
 
-    @info "Computed data for $(length(weights)) states."
+    @assert state_global_index - 1 == num_computed_states  "$state_global_index - 1 != $num_computed_states"
+    @info "Computed data for $num_computed_states states."
 
     @info "Computing derived observables..."
 
@@ -414,21 +425,31 @@ function diagonalize_and_compute_observables(
 
     @info "Computing observables over range of u..."
 
+    # For computing the observables, its more efficient to have the temperatures in the rows
+    weights = weights'
+
     u_shift = (U/2) * (num_colors - 1)  # Shift observables so that density=N/2 at u=0
     # Create a new container to store the observable values at each u
-    computed_observable_values = create_observable_data_map(true, true)
-    for u in u_vals
+    computed_observable_values = create_observable_data_map(true, true, num_temps, num_us)
+    for (i, u) in enumerate(u_vals)
         # The value that has to be added to u_test to shift to the desired u
         u_datapoint_shift = u - u_test + u_shift
 
         # Re-weight the data according to the new u value
-        weight_correction = exp.((-B * -u_datapoint_shift) .* n_fermion_data)
+        # Because of the way broadcasting works, we have to construct the exponents first
+        # (or Julia gets confused). The below syntax makes a matrix of all combinations of
+        # elements from B and n_fermion_data
+        correction_exponents = permutedims(-B * -u_datapoint_shift) .* n_fermion_data
+        # This makes corrected_weights a matrix with indexing [state, temp]
+        corrected_weights = @. exp(correction_exponents) * weights
 
         # Compute the partition function
-        Z = sum(weight_correction .* weights)
+        # Here, the .* multiplies (dot-products) each column of corrected_weights by weights
+        # Then, sum over all the values in each column to get a vector of partition functions for each temperature
+        Z = sum(corrected_weights, dims=1)
 
         @debug begin
-            "u=$u, weight_corrections=$weight_correction, Z=$Z"
+            "u=$u, corrected_weights=$corrected_weights, Z=$Z"
         end
 
         # Compute each observable
@@ -444,28 +465,42 @@ function diagonalize_and_compute_observables(
                 # The expectation value of the Hamiltonian depends on u, so we have to shift it here
                 internal_energy_values =
                     (-u_datapoint_shift * n_fermion_data) .+ observable_values
-                internal_energy_expectation =
-                    sum(@. weight_correction * weights * internal_energy_values) / Z
-                entropy_expectation = internal_energy_expectation * B + log(Z)
-                push!(computed_observable_values["Entropy"], entropy_expectation)
+                # Put internal_energy_values into a tuple so broadcasting works correctly
+                internal_energy_expectations =
+                    sum(corrected_weights .* internal_energy_values; dims=1)
+                normalized_internal_energy_expectations =
+                    internal_energy_expectations ./ Z
+                entropy_expectation = @. normalized_internal_energy_expectations * B' + log.(Z)
+                computed_observable_values["Entropy"][:, i] = entropy_expectation
                 @debug begin
-                    "  Entropy: $entropy_expectation (Internal Energy Values: $internal_energy_values Internal Energy Expectation: $internal_energy_expectation)"
+                    "  Entropy: $entropy_expectation (Internal Energy Values: $internal_energy_values Internal Energy Expectation: $normalized_internal_energy_expectations)"
                 end
+
+                # Fallthrough/continue to store the energy value based on the corrected data
             elseif observable_name == "Entropy"
                 # Calculated above
                 continue
             end
 
             # Compute the expectation value of each observable
-            expectation_value = sum(@. weight_correction * weights * observable_values) / Z
+            # Put internal_energy_values into a tuple so broadcasting works correctly
+            expectation_values =
+                sum(corrected_weights .* observable_values; dims=1)
+            normalized_expectation_values = expectation_values ./ Z
+
             @debug begin
-                "  $observable_name: $expectation_value"
+                "  $observable_name: $normalized_expectation_values"
             end
-            push!(computed_observable_values[observable_name], expectation_value)
+
+            for (j, x) in enumerate(normalized_expectation_values')
+                computed_observable_values[observable_name][j, i] = x
+            end
+
+            computed_observable_values[observable_name][:, i] .= normalized_expectation_values'
         end
 
         for (overlay_name, overlay_function) in overlays
-            push!(computed_observable_values[overlay_name], overlay_function(u))
+            computed_observable_values[overlay_name][:, i] = overlay_function.(B, u)
         end
     end
 
