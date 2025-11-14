@@ -37,7 +37,7 @@ function (@main)(args)
 
     graph = Graphs.linear_chain(4)
 
-    generated_statistics = Dict{String,Vector{Any}}("N" => [], "U" => [], "T" => [])
+    generated_statistics = Dict{String,Vector{Any}}("N" => [], "U" => [])
     for observable_name in keys(test_observables)
         generated_statistics[observable_name] = []
     end
@@ -72,66 +72,63 @@ function (@main)(args)
             expected_data[results_file] = expected
         end
 
-        for (i, T) in enumerate(T_vals)
-            test_config = HubbardDiagonalization.TestConfiguration(
-                num_colors = N,
-                t = 2.0,
-                T = T,
-                u_test = 0.0,
-                U = U
-            )
+        test_config = HubbardDiagonalization.TestConfiguration(
+            num_colors = N,
+            t = 2.0,
+            u_test = 0.0,
+            U = U
+        )
 
-            # Temporarily disable info logging for cleaner test output
-            disable_logging(Logging.Info)
-            results = HubbardDiagonalization.diagonalize_and_compute_observables(
-                u_vals,
-                test_config,
-                graph,
-                observables...,
-            )
-            disable_logging(Logging.Debug)
+        # Temporarily disable info logging for cleaner test output
+        disable_logging(Logging.Info)
+        results = HubbardDiagonalization.diagonalize_and_compute_observables(
+            T_vals,
+            u_vals,
+            test_config,
+            graph,
+            observables...,
+        )
+        disable_logging(Logging.Debug)
 
-            push!(generated_statistics["N"], N)
-            push!(generated_statistics["U"], U)
-            push!(generated_statistics["T"], T)
-            for (observable_name, results_file) in test_observables
-                expected = expected_data[results_file][i, :]
-                computed = results[observable_name]
+        push!(generated_statistics["N"], N)
+        push!(generated_statistics["U"], U)
+        for (observable_name, results_file) in test_observables
+            expected = expected_data[results_file]
+            computed = results[observable_name]
 
-                @assert length(expected) == length(computed) "Length mismatch for observable $observable_name at N=$N, U=$U, T=$T"
+            @assert size(expected) == size(computed) "Size mismatch for observable $observable_name at N=$N, U=$U"
 
-                if warn_on_nan && any(isnan, expected)
-                    @warn "Expected data contains NaN values for N=$N, U=$U, T=$T, observable=$observable_name at " *
-                          "$(u_vals[findfirst(isnan, expected)]) < u < $(u_vals[findlast(isnan, expected)]). " *
-                          "These values will be ignored in the comparison."
-                end
-                if warn_on_nan && any(isnan, computed)
-                    @warn "Computed data contains NaN values for N=$N, U=$U, T=$T, observable=$observable_name at " *
-                          "$(u_vals[findfirst(isnan, computed)]) < u < $(u_vals[findlast(isnan, computed)]). " *
-                          "These values will be ignored in the comparison."
-                end
-
-                # Filter out NaN values for comparison
-                valid_indices = @. !isnan(expected) && !isnan(computed)
-                expected = expected[valid_indices]
-                computed = computed[valid_indices]
-
-                if observable_name == "Energy" || observable_name == "Entropy"
-                    computed ./= Graphs.num_sites(graph)  # Normalize per site
-                else
-                    difference = expected .- computed
-                end
-
-                difference = expected .- computed
-                max_difference = maximum(abs.(difference))
-                mean_difference = mean(abs.(difference))
-                std_difference = std(abs.(difference))
-
-                push!(
-                    generated_statistics[observable_name],
-                    [mean_difference, std_difference, max_difference],
-                )
+            if warn_on_nan && any(isnan, expected)
+                @warn "Expected data contains NaN values for N=$N, U=$U, observable=$observable_name at " *
+                        "$(u_vals[findfirst(isnan, expected)]) < u < $(u_vals[findlast(isnan, expected)]). " *
+                        "These values will be ignored in the comparison."
             end
+            if warn_on_nan && any(isnan, computed)
+                @warn "Computed data contains NaN values for N=$N, U=$U, observable=$observable_name at " *
+                        "$(u_vals[findfirst(isnan, computed)]) < u < $(u_vals[findlast(isnan, computed)]). " *
+                        "These values will be ignored in the comparison."
+            end
+
+            # Filter out NaN values for comparison
+            valid_indices = @. !isnan(expected) && !isnan(computed)
+            expected = expected[valid_indices]
+            computed = computed[valid_indices]
+
+            if observable_name == "Energy" || observable_name == "Entropy"
+                computed ./= Graphs.num_sites(graph)  # Normalize per site
+            else
+                difference = expected .- computed
+            end
+
+            difference = expected .- computed
+            max_difference = maximum(abs.(difference))
+            mean_difference = mean(abs.(difference))
+            std_difference = std(abs.(difference))
+
+            push!(
+                generated_statistics[observable_name],
+                [mean_difference, std_difference, max_difference],
+            )
         end
     end
 
