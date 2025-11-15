@@ -23,6 +23,7 @@ function (@main)(args)
 
     datasets = [
         "./tests/n2_grids/N2_grids.zip",
+        "./tests/n2_grids/2x2_ED_Repulsive_SUN_OBC.zip"
     ]
     # Setup mappings between result names and csv files
     test_observables = Dict(
@@ -58,7 +59,7 @@ function (@main)(args)
             is_nested_zip = endswith(test_set.name, ".zip")
             # Reading Nested Zip Files: https://stackoverflow.com/a/44877369
             zip_reader = is_nested_zip ? ZipFile.Reader(IOBuffer(read(test_set))) : grids_zip
-            prefix = is_nested_zip ? "" : test_set.name * "/"
+            prefix = is_nested_zip ? "" : test_set.name
             run_test_set(graph, generated_statistics, zip_reader, prefix, N, U, test_observables, warn_on_nan)
         end
 
@@ -172,14 +173,12 @@ function run_test_set(
 
         if observable_name == "Energy" || observable_name == "Entropy"
             computed ./= Graphs.num_sites(graph)  # Normalize per site
-        else
-            difference = expected .- computed
         end
 
-        difference = expected .- computed
-        max_difference = maximum(abs.(difference))
-        mean_difference = mean(abs.(difference))
-        std_difference = std(abs.(difference))
+        difference = @. abs(expected - computed)
+        max_difference = maximum(difference)
+        mean_difference = mean(difference)
+        std_difference = std(difference)
 
         push!(
             generated_statistics[observable_name],
