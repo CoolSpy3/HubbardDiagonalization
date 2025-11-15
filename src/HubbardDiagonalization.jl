@@ -108,6 +108,22 @@ function default_observables(test_config::TestConfiguration, graph::Graph)
 
     observables["Num_Particles"] = state -> sum(count_ones(color) for color in state)
     observables["Filled States"] = state -> count_ones(reduce(&, state))
+    observables["Double Occupancies"] = state -> begin
+        total = 0
+        for color_pair in enumerate_states(num_colors, 2)  # Stolen from interaction term code below
+            color_mask = digits(color_pair, base = 2, pad = num_colors)
+            # Set bits for colors **not** in the interaction to 1
+            color_mask = 1 .- color_mask
+            # For all colors not in the interaction, set all bits to 1 (mark all sites as occupied)
+            filled_mask = ((2 ^ num_sites) - 1)  # Mask with all bits set to 1
+            color_mask = color_mask * filled_mask  # 1 -> (111...1), 0 -> 0
+            occupied_sites = state .| color_mask
+            # Take the bitwise AND across all colors to find sites occupied by both colors
+            occupied_sites = reduce(&, occupied_sites)
+            total += count_ones(occupied_sites)
+        end
+        return total
+    end
 
     observables["Energy"] = _ -> 0.0  # Will be handled specially
 

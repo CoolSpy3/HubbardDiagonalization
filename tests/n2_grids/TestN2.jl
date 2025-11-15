@@ -28,7 +28,7 @@ function (@main)(args)
     # Setup mappings between result names and csv files
     test_observables = Dict(
         "Density" => "Densities.csv",
-        "Filled States" => "Doubleoccupancies.csv",
+        "Double Occupancies" => "Doubleoccupancies.csv",
         "Energy" => "Energies.csv",
         "Entropy" => "Entropies.csv"
     )
