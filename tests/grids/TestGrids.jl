@@ -1,4 +1,4 @@
-module TestN2
+module TestGrids
 
 export main
 
@@ -22,8 +22,8 @@ function (@main)(args)
     warn_on_nan = false
 
     datasets = [
-        "./tests/n2_grids/N2_grids.zip",
-        "./tests/n2_grids/2x2_ED_Repulsive_SUN_OBC.zip"
+        "./tests/grids/N2_grids.zip",
+        "./tests/grids/2x2_ED_Repulsive_SUN_OBC.zip"
     ]
     # Setup mappings between result names and csv files
     test_observables = Dict(
@@ -85,7 +85,7 @@ function (@main)(args)
     end
 
     Base.Filesystem.mkpath("output")
-    CSV.write("output/n2_test_results.csv", formatted_statistics)
+    CSV.write("output/grids_test_results.csv", formatted_statistics)
 
     # Print a summary
     summary = "Summary of Results:\n"
