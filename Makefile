@@ -1,4 +1,4 @@
-.PHONY: clean debug default format run setup test_n2
+.PHONY: clean debug default format repl run setup test_n2
 
 default: run
 
@@ -11,6 +11,9 @@ debug:
 
 format:
 	@julia --project=. -e 'import JuliaFormatter; JuliaFormatter.format("."; always_for_in = true)'
+
+repl:
+	@julia --project=.
 
 run:
 	@julia --project=. -m HubbardDiagonalization
