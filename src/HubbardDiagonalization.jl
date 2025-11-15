@@ -233,198 +233,203 @@ function diagonalize_and_compute_observables(
         return map
     end
 
-    # Initialize some containers to store the generated data
-    num_computed_states = sum(
+    # Precalculate configurations and block sizes so we can preallocate memory and do multithreading
+    system_configurations = [
+        (N_fermions, color_configuration)
+        for N_fermions in 0:N_max_fermions for color_configuration in color_configurations(N_fermions, num_sites, num_colors)
+    ]
+    block_sizes = [
         prod(binomial(num_sites, n) for n in color_configuration)
-        for N_fermions in 0:N_max_fermions
-        for color_configuration in color_configurations(N_fermions, num_sites, num_colors)
-    )
+        for (_, color_configuration) in system_configurations
+    ]
+    # Offset into the state arrays for each block
+    size_offset = cumsum(block_sizes) .- block_sizes
+
+    # Initialize some containers to store the generated data
+    num_computed_states = sum(block_sizes)
     weights = zeros(Float64, num_temps, num_computed_states)  # Weights for each state
     n_fermion_data = zeros(Int, num_computed_states)  # Number of fermions for each state (used for re-weighting)
     observable_data = create_observable_data_map(false, false, num_computed_states)
 
-    state_global_index = 1  # Global index to keep track of where we are in the weights/observable_data arrays
-
     @info "Computing Hamiltonian blocks and observables..."
     # The number of fermions and the color configuration are conserved over tunneling,
     # so we can break the Hamiltonian into blocks labeled by these two quantities
-    for N_fermions in 0:N_max_fermions
-        for color_configuration in color_configurations(N_fermions, num_sites, num_colors)
-            # Size of the Hamiltonian block
-            L = prod(binomial(num_sites, n) for n in color_configuration)
-            H = SymmetricMatrix(L)  # Use custom "SymmetricMatrix" type to save memory at the cost of speed
-            observables_basis = create_observable_data_map(false, false, L)  # Compute the observables for each state as we build the matrix
+    for (config_idx, (N_fermions, color_configuration)) in enumerate(system_configurations)
+        # Size of the Hamiltonian block
+        L = block_sizes[config_idx]
+        H = SymmetricMatrix(L)  # Use custom "SymmetricMatrix" type to save memory at the cost of speed
+        observables_basis = create_observable_data_map(false, false, L)  # Compute the observables for each state as we build the matrix
 
-            # Compute Hamiltonian matrix elements between all pairs of states
-            # enumerate_multistate returns elements in a consistent order, so
-            # as long as we're consistent, the matrix elements will be in the right place
-            # state_i and state_j are arrays of integers, where each integer is a bitmask
-            # representing the occupation of each site for a given color
-            for (i, state_i) in
+        # Compute Hamiltonian matrix elements between all pairs of states
+        # enumerate_multistate returns elements in a consistent order, so
+        # as long as we're consistent, the matrix elements will be in the right place
+        # state_i and state_j are arrays of integers, where each integer is a bitmask
+        # representing the occupation of each site for a given color
+        for (i, state_i) in
+            enumerate(enumerate_multistate(num_sites, color_configuration))
+            # Note: We're going to cut this inner loop off early since the matrix is symmetric
+            for (j, state_j) in
                 enumerate(enumerate_multistate(num_sites, color_configuration))
-                # Note: We're going to cut this inner loop off early since the matrix is symmetric
-                for (j, state_j) in
-                    enumerate(enumerate_multistate(num_sites, color_configuration))
-                    @debug begin
-                        "Computing H[$i,$j] between states:\n  state_i=$(digits.(state_i, base=2, pad=num_sites))\n  state_j=$(digits.(state_j, base=2, pad=num_sites))"
-                    end
-                    if i == j  # Because enumerate_multistate is consistent, if the indices are equal, the states are equal
-                        # Diagonal element
-                        H[i, i] = -u_test * N_fermions
-
-                        # Interaction term
-                        # Consider two colors at a time to interact
-                        for interacting_colors in enumerate_states(num_colors, 2)
-                            # Count number of pairs of fermions on the same site
-                            color_mask =
-                                digits(interacting_colors, base = 2, pad = num_colors)
-                            # Set bits for colors **not** in the interaction to 1
-                            color_mask = 1 .- color_mask
-                            # For all colors not in the interaction, set all bits to 1 (mark all sites as occupied)
-                            filled_mask = ((2 ^ num_sites) - 1)  # Mask with all bits set to 1
-                            color_mask = color_mask * filled_mask  # 1 -> (111...1), 0 -> 0
-                            occupied_sites = state_i .| color_mask
-                            # Take the bitwise AND across all colors to find sites occupied by both colors
-                            occupied_sites = reduce(&, occupied_sites)
-                            # Add interaction energy for each pair of fermions on the same site
-                            H[i, i] += U * count_ones(occupied_sites)
-                        end
-
-                        break  # No need to compute upper-triangular elements
-                    else
-                        # Off-diagonal element
-                        H[j, i] = 0.0   # Use j,i to be efficient with column-major storage
-
-                        # Hopping term
-                        # First, compute the difference between the two states
-                        # This is a bitmask where bits are 1 if a fermion appeared or disappeared
-                        # Because the total number of fermions is fixed, if only two
-                        # bits are set, then one fermion hopped from one site to another
-                        diff = state_i .⊻ state_j
-                        # Figure out which color hopped
-                        # If more than one color hopped, then each individual hopping term is zero
-                        # so their sum is also zero
-                        hopped_color = 0
-                        for color in 1:num_colors
-                            if diff[color] != 0
-                                if count_ones(diff[color]) != 2 || hopped_color != 0
-                                    # More than one color or more than one fermion hopped,
-                                    # so this matrix element is zero
-                                    hopped_color = -1
-                                    break
-                                end
-                                hopped_color = color
-                            end
-                        end
-                        @assert hopped_color != 0  # States must be different
-                        if hopped_color == -1
-                            continue
-                        end
-
-                        # Get the sites involved in the hop
-                        hopped_sites = digits(diff[hopped_color], base = 2, pad = num_sites)
-                        site_1 = findfirst(isequal(1), hopped_sites)
-                        site_2 = findlast(isequal(1), hopped_sites)
-                        @assert site_1 != site_2
-
-                        @debug begin
-                            "Considering hop of color $hopped_color from site $site_1 to site $site_2"
-                        end
-
-                        # Verify that the hop is allowed by the graph
-                        if has_edge(graph, site_1, site_2)
-                            # If so, the sign will be flipped if an odd number of
-                            # spots are occupied *between* the two sites.
-                            # Note that this refers to the representation of the
-                            # spots not how they're related by the graph
-
-                            occupied_sites = state_i[hopped_color] & state_j[hopped_color]
-                            # Create a mask with 1s in all bits between site_1 and site_2.
-                            # Note that julia's one-based indexing actually works out here
-                            # If site=2 (so it's referring to the 2nd bit in the bitmask),
-                            # Then, (1 << site) = 0b100, and (1 << site) - 1 = 0b011
-                            # (Keep in mind that digits is interpreting this in little-endian,
-                            # so the second-least-significant bit is the "2nd" bit)
-                            # With this in mind, we can calculate the mask by taking the
-                            # mask for all bits at or below site_2 (which is larger than site_1)
-                            # and ANDing it with all of the bits above site_1 (which is just the
-                            # same algorithm negated)
-                            # Note that because the hop occurs between site_1 and site_2,
-                            # both site_1 and site_2 are 0 in occupied_sites, so it doesn't
-                            # matter if we include them in the mask or not.
-                            bitween_mask = ((1 << site_2) - 1) & ~((1 << site_1) - 1)
-                            sign =
-                                iseven(count_ones(occupied_sites & bitween_mask)) ? 1 : -1
-                            @debug begin
-                                "  Hop is allowed by graph! sign=$sign"
-                            end
-                            H[j, i] = sign * (-t)
-                        end
-                    end
-                end
-
-                # Now that we've constructed the row for state_i, compute the observables
-                for (observable_name, observable_function) in observables
-                    # Pre-compute the observable for this basis state
-                    observables_basis[observable_name][i] = observable_function(state_i)
-                end
-            end
-
-            num_permutations = num_configuration_permutations(color_configuration)
-
-            @debug begin
-                "N_fermions=$N_fermions, color_configuration=$(color_configuration), L=$L, num_configuration_permutations=$(num_permutations), H=$H"
-            end
-
-            # Diagonalize the Hamiltonian block
-            H_symmetric_view = LinearAlgebra.Symmetric(H, :U)
-            # Annoyingly, eigen() forces us to store all the eigenvectors
-            # in memory at once, but I can't find a good way around this
-            # Even the builtin `eigvals`/`eigvecs` functions are just
-            # wrappers around this.
-            eigen_data = LinearAlgebra.eigen(H_symmetric_view)
-
-            @debug begin
-                msg = "observable_basis_data:\n"
-                for (name, data) in observables_basis
-                    msg *= "  $name: $data\n"
-                end
-                msg
-            end
-
-            # Compute and store observables for each eigen-state
-            for (eigen_val, eigen_vec) in
-                zip(eigen_data.values, eachcol(eigen_data.vectors))
                 @debug begin
-                    "  eigen_val=$eigen_val, eigen_vec=$eigen_vec"
+                    "Computing H[$i,$j] between states:\n  state_i=$(digits.(state_i, base=2, pad=num_sites))\n  state_j=$(digits.(state_j, base=2, pad=num_sites))"
                 end
+                if i == j  # Because enumerate_multistate is consistent, if the indices are equal, the states are equal
+                    # Diagonal element
+                    H[i, i] = -u_test * N_fermions
 
-                # eigen() returns normalized eigenvectors, so we don't need to do any normalization here
+                    # Interaction term
+                    # Consider two colors at a time to interact
+                    for interacting_colors in enumerate_states(num_colors, 2)
+                        # Count number of pairs of fermions on the same site
+                        color_mask =
+                            digits(interacting_colors, base = 2, pad = num_colors)
+                        # Set bits for colors **not** in the interaction to 1
+                        color_mask = 1 .- color_mask
+                        # For all colors not in the interaction, set all bits to 1 (mark all sites as occupied)
+                        filled_mask = ((2 ^ num_sites) - 1)  # Mask with all bits set to 1
+                        color_mask = color_mask * filled_mask  # 1 -> (111...1), 0 -> 0
+                        occupied_sites = state_i .| color_mask
+                        # Take the bitwise AND across all colors to find sites occupied by both colors
+                        occupied_sites = reduce(&, occupied_sites)
+                        # Add interaction energy for each pair of fermions on the same site
+                        H[i, i] += U * count_ones(occupied_sites)
+                    end
 
-                # Weight data of this state in the partition function
-                weight = num_permutations * exp.(-B * eigen_val)
-                weights[:, state_global_index] = weight
-                n_fermion_data[state_global_index] = N_fermions
+                    break  # No need to compute upper-triangular elements
+                else
+                    # Off-diagonal element
+                    H[j, i] = 0.0   # Use j,i to be efficient with column-major storage
 
-                # Compute each observable for this state
-                for (observable_name, observable_basis_data) in observables_basis
-                    if observable_name == "Energy"
-                        # The energy is just the eigenvalue
-                        observable_data[observable_name][state_global_index] = eigen_val
-                    else
-                        # Because we already computed the observables for each basis state,
-                        # we can just do a weighted sum over those based on the eigenvector components
-                        observable_value =
-                            sum(@. observable_basis_data * eigen_vec * eigen_vec)
-                        observable_data[observable_name][state_global_index] = observable_value
+                    # Hopping term
+                    # First, compute the difference between the two states
+                    # This is a bitmask where bits are 1 if a fermion appeared or disappeared
+                    # Because the total number of fermions is fixed, if only two
+                    # bits are set, then one fermion hopped from one site to another
+                    diff = state_i .⊻ state_j
+                    # Figure out which color hopped
+                    # If more than one color hopped, then each individual hopping term is zero
+                    # so their sum is also zero
+                    hopped_color = 0
+                    for color in 1:num_colors
+                        if diff[color] != 0
+                            if count_ones(diff[color]) != 2 || hopped_color != 0
+                                # More than one color or more than one fermion hopped,
+                                # so this matrix element is zero
+                                hopped_color = -1
+                                break
+                            end
+                            hopped_color = color
+                        end
+                    end
+                    @assert hopped_color != 0  # States must be different
+                    if hopped_color == -1
+                        continue
+                    end
+
+                    # Get the sites involved in the hop
+                    hopped_sites = digits(diff[hopped_color], base = 2, pad = num_sites)
+                    site_1 = findfirst(isequal(1), hopped_sites)
+                    site_2 = findlast(isequal(1), hopped_sites)
+                    @assert site_1 != site_2
+
+                    @debug begin
+                        "Considering hop of color $hopped_color from site $site_1 to site $site_2"
+                    end
+
+                    # Verify that the hop is allowed by the graph
+                    if has_edge(graph, site_1, site_2)
+                        # If so, the sign will be flipped if an odd number of
+                        # spots are occupied *between* the two sites.
+                        # Note that this refers to the representation of the
+                        # spots not how they're related by the graph
+
+                        occupied_sites = state_i[hopped_color] & state_j[hopped_color]
+                        # Create a mask with 1s in all bits between site_1 and site_2.
+                        # Note that julia's one-based indexing actually works out here
+                        # If site=2 (so it's referring to the 2nd bit in the bitmask),
+                        # Then, (1 << site) = 0b100, and (1 << site) - 1 = 0b011
+                        # (Keep in mind that digits is interpreting this in little-endian,
+                        # so the second-least-significant bit is the "2nd" bit)
+                        # With this in mind, we can calculate the mask by taking the
+                        # mask for all bits at or below site_2 (which is larger than site_1)
+                        # and ANDing it with all of the bits above site_1 (which is just the
+                        # same algorithm negated)
+                        # Note that because the hop occurs between site_1 and site_2,
+                        # both site_1 and site_2 are 0 in occupied_sites, so it doesn't
+                        # matter if we include them in the mask or not.
+                        bitween_mask = ((1 << site_2) - 1) & ~((1 << site_1) - 1)
+                        sign =
+                            iseven(count_ones(occupied_sites & bitween_mask)) ? 1 : -1
+                        @debug begin
+                            "  Hop is allowed by graph! sign=$sign"
+                        end
+                        H[j, i] = sign * (-t)
                     end
                 end
-                state_global_index += 1
+            end
+
+            # Now that we've constructed the row for state_i, compute the observables
+            for (observable_name, observable_function) in observables
+                # Pre-compute the observable for this basis state
+                observables_basis[observable_name][i] = observable_function(state_i)
+            end
+        end
+
+        num_permutations = num_configuration_permutations(color_configuration)
+
+        @debug begin
+            "N_fermions=$N_fermions, color_configuration=$(color_configuration), L=$L, num_configuration_permutations=$(num_permutations), H=$H"
+        end
+
+        # Diagonalize the Hamiltonian block
+        H_symmetric_view = LinearAlgebra.Symmetric(H, :U)
+        # Annoyingly, eigen() forces us to store all the eigenvectors
+        # in memory at once, but I can't find a good way around this
+        # Even the builtin `eigvals`/`eigvecs` functions are just
+        # wrappers around this.
+        eigen_data = LinearAlgebra.eigen(H_symmetric_view)
+
+        @debug begin
+            msg = "observable_basis_data:\n"
+            for (name, data) in observables_basis
+                msg *= "  $name: $data\n"
+            end
+            msg
+        end
+
+        # Compute and store observables for each eigen-state
+        offset = size_offset[config_idx]
+        for (i, (eigen_val, eigen_vec)) in
+            enumerate(zip(eigen_data.values, eachcol(eigen_data.vectors)))
+            @debug begin
+                "  eigen_val=$eigen_val, eigen_vec=$eigen_vec"
+            end
+
+            idx = offset + i
+
+            # eigen() returns normalized eigenvectors, so we don't need to do any normalization here
+
+            # Weight data of this state in the partition function
+            weight = num_permutations * exp.(-B * eigen_val)
+            weights[:, idx] = weight
+            n_fermion_data[idx] = N_fermions
+
+            # Compute each observable for this state
+            for (observable_name, observable_basis_data) in observables_basis
+                if observable_name == "Energy"
+                    # The energy is just the eigenvalue
+                    observable_data[observable_name][idx] = eigen_val
+                else
+                    # Because we already computed the observables for each basis state,
+                    # we can just do a weighted sum over those based on the eigenvector components
+                    observable_value =
+                        sum(@. observable_basis_data * eigen_vec * eigen_vec)
+                    observable_data[observable_name][idx] = observable_value
+                end
             end
         end
     end
 
-    @assert state_global_index - 1 == num_computed_states  "$state_global_index - 1 != $num_computed_states"
     @info "Computed data for $num_computed_states states."
 
     @info "Computing derived observables..."
