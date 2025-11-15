@@ -12,7 +12,8 @@ using Statistics
 using ZipFile
 
 function read_csv(prefix::String, name::String, zip_reader::ZipFile.Reader)
-    matching_files = filter(f -> startswith(f.name, prefix) && endswith(f.name, name), zip_reader.files)
+    matching_files =
+        filter(f -> startswith(f.name, prefix) && endswith(f.name, name), zip_reader.files)
     @assert length(matching_files) == 1 "Expected exactly one file matching $name with prefix $prefix, found $(length(matching_files))"
     file = matching_files[1]
     return CSV.File(file, header = false) |> CSV.Tables.matrix
@@ -21,16 +22,13 @@ end
 function (@main)(args)
     warn_on_nan = false
 
-    datasets = [
-        "./tests/grids/N2_grids.zip",
-        "./tests/grids/2x2_ED_Repulsive_SUN_OBC.zip"
-    ]
+    datasets = ["./tests/grids/N2_grids.zip", "./tests/grids/2x2_ED_Repulsive_SUN_OBC.zip"]
     # Setup mappings between result names and csv files
     test_observables = Dict(
         "Density" => "Densities.csv",
         "Double Occupancies" => "Doubleoccupancies.csv",
         "Energy" => "Energies.csv",
-        "Entropy" => "Entropies.csv"
+        "Entropy" => "Entropies.csv",
     )
 
     if !warn_on_nan
@@ -58,9 +56,19 @@ function (@main)(args)
 
             is_nested_zip = endswith(test_set.name, ".zip")
             # Reading Nested Zip Files: https://stackoverflow.com/a/44877369
-            zip_reader = is_nested_zip ? ZipFile.Reader(IOBuffer(read(test_set))) : grids_zip
+            zip_reader =
+                is_nested_zip ? ZipFile.Reader(IOBuffer(read(test_set))) : grids_zip
             prefix = is_nested_zip ? "" : test_set.name
-            run_test_set(graph, generated_statistics, zip_reader, prefix, N, U, test_observables, warn_on_nan)
+            run_test_set(
+                graph,
+                generated_statistics,
+                zip_reader,
+                prefix,
+                N,
+                U,
+                test_observables,
+                warn_on_nan,
+            )
         end
 
         # Stop Julia from garbage-collecting the reader (https://github.com/fhs/ZipFile.jl/issues/14#issuecomment-1135397765)
@@ -109,14 +117,16 @@ function run_test_set(
     generated_statistics::Dict{String,Vector{Any}},
     zip_reader::ZipFile.Reader,
     prefix::String,
-    N::Int, U::Float64,
+    N::Int,
+    U::Float64,
     test_observables::Dict{String,String},
-    warn_on_nan::Bool)
+    warn_on_nan::Bool,
+)
     test_config = HubbardDiagonalization.TestConfiguration(
         num_colors = N,
         t = 2.0,
         u_test = 0.0,
-        U = U
+        U = U,
     )
 
     observables = HubbardDiagonalization.default_observables(test_config, graph)
@@ -157,13 +167,13 @@ function run_test_set(
 
         if warn_on_nan && any(isnan, expected)
             @warn "Expected data contains NaN values for N=$N, U=$U, observable=$observable_name at " *
-                    "$(u_vals[findfirst(isnan, expected)]) < u < $(u_vals[findlast(isnan, expected)]). " *
-                    "These values will be ignored in the comparison."
+                  "$(u_vals[findfirst(isnan, expected)]) < u < $(u_vals[findlast(isnan, expected)]). " *
+                  "These values will be ignored in the comparison."
         end
         if warn_on_nan && any(isnan, computed)
             @warn "Computed data contains NaN values for N=$N, U=$U, observable=$observable_name at " *
-                    "$(u_vals[findfirst(isnan, computed)]) < u < $(u_vals[findlast(isnan, computed)]). " *
-                    "These values will be ignored in the comparison."
+                  "$(u_vals[findfirst(isnan, computed)]) < u < $(u_vals[findlast(isnan, computed)]). " *
+                  "These values will be ignored in the comparison."
         end
 
         # Filter out NaN values for comparison

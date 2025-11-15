@@ -76,8 +76,7 @@ function (@main)(args)
     u_vals = plot_config["u_min"]:plot_config["u_step"]:plot_config["u_max"]
     graph = linear_chain(graph_config["num_sites"])
 
-    observables, derived_observables, overlays =
-        default_observables(test_config, graph)
+    observables, derived_observables, overlays = default_observables(test_config, graph)
     @info "Defined observables: $(union(keys(observables), keys(derived_observables), keys(overlays)))"
 
     observable_data = diagonalize_and_compute_observables(
@@ -90,14 +89,7 @@ function (@main)(args)
         overlays,
     )
 
-    export_observable_data(
-        plot_config,
-        t_vals,
-        u_vals,
-        observable_data,
-        test_config,
-        graph,
-    )
+    export_observable_data(plot_config, t_vals, u_vals, observable_data, test_config, graph)
 
     @info "Done."
 
@@ -116,22 +108,23 @@ function default_observables(test_config::TestConfiguration, graph::Graph)
 
     observables["Num_Particles"] = state -> sum(count_ones(color) for color in state)
     observables["Filled States"] = state -> count_ones(reduce(&, state))
-    observables["Double Occupancies"] = state -> begin
-        total = 0
-        for color_pair in enumerate_states(num_colors, 2)  # Stolen from interaction term code below
-            color_mask = digits(color_pair, base = 2, pad = num_colors)
-            # Set bits for colors **not** in the interaction to 1
-            color_mask = 1 .- color_mask
-            # For all colors not in the interaction, set all bits to 1 (mark all sites as occupied)
-            filled_mask = ((2 ^ num_sites) - 1)  # Mask with all bits set to 1
-            color_mask = color_mask * filled_mask  # 1 -> (111...1), 0 -> 0
-            occupied_sites = state .| color_mask
-            # Take the bitwise AND across all colors to find sites occupied by both colors
-            occupied_sites = reduce(&, occupied_sites)
-            total += count_ones(occupied_sites)
+    observables["Double Occupancies"] =
+        state -> begin
+            total = 0
+            for color_pair in enumerate_states(num_colors, 2)  # Stolen from interaction term code below
+                color_mask = digits(color_pair, base = 2, pad = num_colors)
+                # Set bits for colors **not** in the interaction to 1
+                color_mask = 1 .- color_mask
+                # For all colors not in the interaction, set all bits to 1 (mark all sites as occupied)
+                filled_mask = ((2 ^ num_sites) - 1)  # Mask with all bits set to 1
+                color_mask = color_mask * filled_mask  # 1 -> (111...1), 0 -> 0
+                occupied_sites = state .| color_mask
+                # Take the bitwise AND across all colors to find sites occupied by both colors
+                occupied_sites = reduce(&, occupied_sites)
+                total += count_ones(occupied_sites)
+            end
+            return total
         end
-        return total
-    end
 
     observables["Energy"] = _ -> 0.0  # Will be handled specially
 
@@ -159,7 +152,8 @@ function default_observables(test_config::TestConfiguration, graph::Graph)
             @. observable_data["Num_Particles"] - 2 * observable_data["Filled States"]
     derived_observables["Density"] =
         observable_data -> observable_data["Num_Particles"] ./ num_sites
-    derived_observables["Entropy"] = observable_data -> zeros(Float64, size(observable_data["Num_Particles"])...)  # Will be handled specially
+    derived_observables["Entropy"] =
+        observable_data -> zeros(Float64, size(observable_data["Num_Particles"])...)  # Will be handled specially
 
     # Additional Plots that can be directly calculated
     overlays = Dict{String,Function}()
@@ -174,11 +168,14 @@ function default_observables(test_config::TestConfiguration, graph::Graph)
         rho(B, u) = (1/z0(B, u)) * weighted_sum(B, u, n -> n)
         # energy(u) = (1/z0(u)) * weighted_sum(u, n -> e0(n, u) #= + (u + (U/2) * (num_colors - 1)) *  n =#)
         energy(B, u) =
-            (1/z0(B, u)) * weighted_sum(B, u, n -> e0(n, u) + (u + (U/2) * (num_colors - 1)) * n)
+            (1/z0(B, u)) *
+            weighted_sum(B, u, n -> e0(n, u) + (u + (U/2) * (num_colors - 1)) * n)
         overlays["Actual Energy"] = energy
         # overlays["Actual Entropy"] = u -> log(z0(u)) + B * (energy(u) #= - (u + (U/2) * (num_colors - 1)) * rho(u) =#)
         overlays["Actual Entropy"] =
-            (B, u) -> log(z0(B, u)) + B * (energy(B, u) - (u + (U/2) * (num_colors - 1)) * rho(B, u))
+            (B, u) ->
+                log(z0(B, u)) +
+                B * (energy(B, u) - (u + (U/2) * (num_colors - 1)) * rho(B, u))
     end
 
     return observables, derived_observables, overlays
@@ -222,7 +219,11 @@ function diagonalize_and_compute_observables(
     A convenience function to create an empty map from observable names to data vectors.
     """
     # We're going to need a few of these. Might as well make it a function.
-    function create_observable_data_map(include_derived::Bool, include_overlays::Bool, size::Int...)
+    function create_observable_data_map(
+        include_derived::Bool,
+        include_overlays::Bool,
+        size::Int...,
+    )
         storage_type = typeof(zeros(Float64, size))
         map = Dict{String,storage_type}()
         for observable_name in keys(observables)
@@ -243,12 +244,12 @@ function diagonalize_and_compute_observables(
 
     # Precalculate configurations and block sizes so we can preallocate memory and do multithreading
     system_configurations = [
-        (N_fermions, color_configuration)
-        for N_fermions in 0:N_max_fermions for color_configuration in color_configurations(N_fermions, num_sites, num_colors)
+        (N_fermions, color_configuration) for N_fermions in 0:N_max_fermions for
+        color_configuration in color_configurations(N_fermions, num_sites, num_colors)
     ]
     block_sizes = [
-        prod(binomial(num_sites, n) for n in color_configuration)
-        for (_, color_configuration) in system_configurations
+        prod(binomial(num_sites, n) for n in color_configuration) for
+        (_, color_configuration) in system_configurations
     ]
     # Offset into the state arrays for each block
     size_offset = cumsum(block_sizes) .- block_sizes
@@ -262,7 +263,8 @@ function diagonalize_and_compute_observables(
     @info "Computing Hamiltonian blocks and observables..."
     # The number of fermions and the color configuration are conserved over tunneling,
     # so we can break the Hamiltonian into blocks labeled by these two quantities
-    @threads :greedy for (config_idx, (N_fermions, color_configuration)) in collect(enumerate(system_configurations))
+    @threads :greedy for (config_idx, (N_fermions, color_configuration)) in
+                         collect(enumerate(system_configurations))
         # Size of the Hamiltonian block
         L = block_sizes[config_idx]
         H = SymmetricMatrix(L)  # Use custom "SymmetricMatrix" type to save memory at the cost of speed
@@ -273,8 +275,7 @@ function diagonalize_and_compute_observables(
         # as long as we're consistent, the matrix elements will be in the right place
         # state_i and state_j are arrays of integers, where each integer is a bitmask
         # representing the occupation of each site for a given color
-        for (i, state_i) in
-            enumerate(enumerate_multistate(num_sites, color_configuration))
+        for (i, state_i) in enumerate(enumerate_multistate(num_sites, color_configuration))
             # Note: We're going to cut this inner loop off early since the matrix is symmetric
             for (j, state_j) in
                 enumerate(enumerate_multistate(num_sites, color_configuration))
@@ -289,8 +290,7 @@ function diagonalize_and_compute_observables(
                     # Consider two colors at a time to interact
                     for interacting_colors in enumerate_states(num_colors, 2)
                         # Count number of pairs of fermions on the same site
-                        color_mask =
-                            digits(interacting_colors, base = 2, pad = num_colors)
+                        color_mask = digits(interacting_colors, base = 2, pad = num_colors)
                         # Set bits for colors **not** in the interaction to 1
                         color_mask = 1 .- color_mask
                         # For all colors not in the interaction, set all bits to 1 (mark all sites as occupied)
@@ -366,8 +366,7 @@ function diagonalize_and_compute_observables(
                         # both site_1 and site_2 are 0 in occupied_sites, so it doesn't
                         # matter if we include them in the mask or not.
                         bitween_mask = ((1 << site_2) - 1) & ~((1 << site_1) - 1)
-                        sign =
-                            iseven(count_ones(occupied_sites & bitween_mask)) ? 1 : -1
+                        sign = iseven(count_ones(occupied_sites & bitween_mask)) ? 1 : -1
                         @debug begin
                             "  Hop is allowed by graph! sign=$sign"
                         end
@@ -430,8 +429,7 @@ function diagonalize_and_compute_observables(
                 else
                     # Because we already computed the observables for each basis state,
                     # we can just do a weighted sum over those based on the eigenvector components
-                    observable_value =
-                        sum(@. observable_basis_data * eigen_vec * eigen_vec)
+                    observable_value = sum(@. observable_basis_data * eigen_vec * eigen_vec)
                     observable_data[observable_name][idx] = observable_value
                 end
             end
@@ -479,7 +477,7 @@ function diagonalize_and_compute_observables(
         # Compute the partition function
         # Here, the .* multiplies (dot-products) each column of corrected_weights by weights
         # Then, sum over all the values in each column to get a vector of partition functions for each temperature
-        Z = sum(corrected_weights, dims=1)
+        Z = sum(corrected_weights, dims = 1)
 
         @debug begin
             "u=$u, corrected_weights=$corrected_weights, Z=$Z"
@@ -500,10 +498,10 @@ function diagonalize_and_compute_observables(
                     (-u_datapoint_shift * n_fermion_data) .+ observable_values
                 # Put internal_energy_values into a tuple so broadcasting works correctly
                 internal_energy_expectations =
-                    sum(corrected_weights .* internal_energy_values; dims=1)
-                normalized_internal_energy_expectations =
-                    internal_energy_expectations ./ Z
-                entropy_expectation = @. normalized_internal_energy_expectations * B' + log.(Z)
+                    sum(corrected_weights .* internal_energy_values; dims = 1)
+                normalized_internal_energy_expectations = internal_energy_expectations ./ Z
+                entropy_expectation =
+                    @. normalized_internal_energy_expectations * B' + log.(Z)
                 computed_observable_values["Entropy"][:, i] = entropy_expectation
                 @debug begin
                     "  Entropy: $entropy_expectation (Internal Energy Values: $internal_energy_values Internal Energy Expectation: $normalized_internal_energy_expectations)"
@@ -517,8 +515,7 @@ function diagonalize_and_compute_observables(
 
             # Compute the expectation value of each observable
             # Put internal_energy_values into a tuple so broadcasting works correctly
-            expectation_values =
-                sum(corrected_weights .* observable_values; dims=1)
+            expectation_values = sum(corrected_weights .* observable_values; dims = 1)
             normalized_expectation_values = expectation_values ./ Z
 
             @debug begin
@@ -529,7 +526,8 @@ function diagonalize_and_compute_observables(
                 computed_observable_values[observable_name][j, i] = x
             end
 
-            computed_observable_values[observable_name][:, i] .= normalized_expectation_values'
+            computed_observable_values[observable_name][:, i] .=
+                normalized_expectation_values'
         end
 
         for (overlay_name, overlay_function) in overlays
@@ -563,7 +561,7 @@ function export_observable_data(
 
     # Create plots for each T value
     for T in plot_config["T_fixed_plots"]
-        T_index = findall(x -> isapprox(x, T; atol=1e-8), T_vals)
+        T_index = findall(x -> isapprox(x, T; atol = 1e-8), T_vals)
         if length(T_index) == 0
             @warn "T=$T not found in T_vals; skipping fixed-T plot."
             continue
@@ -591,7 +589,7 @@ function export_observable_data(
 
     # And create a plot at u_test
     for u in plot_config["u_fixed_plots"]
-        u_index = findall(x -> isapprox(x, u; atol=1e-8), u_vals)
+        u_index = findall(x -> isapprox(x, u; atol = 1e-8), u_vals)
         if length(u_index) == 0
             @warn "u=$u not found in u_vals; skipping fixed-u plot."
             continue
