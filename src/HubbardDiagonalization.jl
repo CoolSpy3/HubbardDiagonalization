@@ -23,6 +23,8 @@ import Logging
 import Plots
 import TOML
 
+using Base.Threads
+
 # Set up plotting backend
 using Plots
 if use_unicode_plots
@@ -54,6 +56,12 @@ function (@main)(args)
     else
         # In normal mode disable debug logging
         Logging.disable_logging(Logging.Debug)
+    end
+
+    if nthreads() == 1
+        @warn "Running in single-threaded mode. For better performance, consider setting the JULIA_NUM_THREADS environment variable to a higher value."
+    else
+        @info "Running with $(nthreads()) threads."
     end
 
     # Parse configuration file
@@ -254,7 +262,7 @@ function diagonalize_and_compute_observables(
     @info "Computing Hamiltonian blocks and observables..."
     # The number of fermions and the color configuration are conserved over tunneling,
     # so we can break the Hamiltonian into blocks labeled by these two quantities
-    for (config_idx, (N_fermions, color_configuration)) in enumerate(system_configurations)
+    @threads :greedy for (config_idx, (N_fermions, color_configuration)) in collect(enumerate(system_configurations))
         # Size of the Hamiltonian block
         L = block_sizes[config_idx]
         H = SymmetricMatrix(L)  # Use custom "SymmetricMatrix" type to save memory at the cost of speed
@@ -456,7 +464,7 @@ function diagonalize_and_compute_observables(
     u_shift = (U/2) * (num_colors - 1)  # Shift observables so that density=N/2 at u=0
     # Create a new container to store the observable values at each u
     computed_observable_values = create_observable_data_map(true, true, num_temps, num_us)
-    for (i, u) in enumerate(u_vals)
+    @threads for (i, u) in collect(enumerate(u_vals))
         # The value that has to be added to u_test to shift to the desired u
         u_datapoint_shift = u - u_test + u_shift
 
