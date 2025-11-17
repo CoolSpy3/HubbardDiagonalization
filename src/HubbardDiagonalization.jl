@@ -568,10 +568,12 @@ function export_observable_data(
     csv_overlay_T_vals = nothing
     csv_overlay_data = nothing
 
-    if haskey(plot_config, "overlay_data") && lowercase(plot_config["overlay_data"]) != "none"
+    if haskey(plot_config, "overlay_data") &&
+       lowercase(plot_config["overlay_data"]) != "none"
         csv_path = plot_config["overlay_data"]
         @info "Loading CSV overlay data from $csv_path..."
-        csv_overlay_u_vals, csv_overlay_T_vals, csv_overlay_data = CSVUtil.load_overlay_data(csv_path)
+        csv_overlay_u_vals, csv_overlay_T_vals, csv_overlay_data =
+            CSVUtil.load_overlay_data(csv_path)
     end
 
     @info "Plotting observables..."
@@ -612,7 +614,7 @@ function export_observable_data(
                         graph,
                         csv_overlay_u_vals,
                         data[T_csv_index, :],
-                        labels = "$(name) (CSV Overlay)"
+                        labels = "$(name) (CSV Overlay)",
                     )
                 end
             else
@@ -660,7 +662,7 @@ function export_observable_data(
                         graph,
                         csv_overlay_T_vals,
                         data[:, u_csv_index],
-                        labels = "$(name) (CSV Overlay)"
+                        labels = "$(name) (CSV Overlay)",
                     )
                 end
             else
