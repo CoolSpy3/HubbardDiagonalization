@@ -6,10 +6,12 @@ export TestConfiguration
 export default_observables, diagonalize_and_compute_observables, export_observable_data
 
 # Include our submodules
+include("CSVUtil.jl")
 include("Graphs.jl")
 include("StateEnumeration.jl")
 include("SymmetricMatrices.jl")
 
+using .CSVUtil
 using .Graphs
 using .StateEnumeration
 using .SymmetricMatrices
@@ -22,6 +24,7 @@ import LinearAlgebra
 import Logging
 import Plots
 import TOML
+import ZipFile
 
 using Base.Threads
 
@@ -46,6 +49,8 @@ function convert_strings_to_symbols(dict::Dict{String,Any})
     end
     return new_dict
 end
+
+
 
 function (@main)(args)
     # Install our own logger for the duration of the program
@@ -128,22 +133,22 @@ function default_observables(test_config::TestConfiguration, graph::Graph)
 
     observables["Energy"] = _ -> 0.0  # Will be handled specially
 
-    observables["P_a"] =
-        state ->
-            count_ones(state[1]) *
-            prod((1 - count_ones(state[c]) for c in 2:num_colors), init = 1)
-    if num_colors >= 2
-        observables["P_ab"] =
-            state ->
-                prod(count_ones(state[c]) for c in 1:2) *
-                prod((1 - count_ones(state[c]) for c in 3:num_colors), init = 1)
-    end
-    if num_colors >= 3
-        observables["P_abc"] =
-            state ->
-                prod(count_ones(state[c]) for c in 1:3) *
-                prod((1 - count_ones(state[c]) for c in 4:num_colors), init = 1)
-    end
+    # observables["P_a"] =
+    #     state ->
+    #         count_ones(state[1]) *
+    #         prod((1 - count_ones(state[c]) for c in 2:num_colors), init = 1)
+    # if num_colors >= 2
+    #     observables["P_ab"] =
+    #         state ->
+    #             prod(count_ones(state[c]) for c in 1:2) *
+    #             prod((1 - count_ones(state[c]) for c in 3:num_colors), init = 1)
+    # end
+    # if num_colors >= 3
+    #     observables["P_abc"] =
+    #         state ->
+    #             prod(count_ones(state[c]) for c in 1:3) *
+    #             prod((1 - count_ones(state[c]) for c in 4:num_colors), init = 1)
+    # end
 
     # Observables that can be calculated from other observables
     derived_observables = Dict{String,Function}()
@@ -557,6 +562,18 @@ function export_observable_data(
         labeled_matrix = hcat(["u/T", T_vals...], vcat(u_vals', data_matrix))
         CSV.write("output/$(observable_name).csv", CSV.Tables.table(labeled_matrix))
     end
+
+    # Load csv (if requested)
+    csv_overlay_u_vals = nothing
+    csv_overlay_T_vals = nothing
+    csv_overlay_data = nothing
+
+    if haskey(plot_config, "overlay_data") && lowercase(plot_config["overlay_data"]) != "none"
+        csv_path = plot_config["overlay_data"]
+        @info "Loading CSV overlay data from $csv_path..."
+        csv_overlay_u_vals, csv_overlay_T_vals, csv_overlay_data = CSVUtil.load_overlay_data(csv_path)
+    end
+
     @info "Plotting observables..."
 
     # Create plots for each T value
@@ -581,6 +598,26 @@ function export_observable_data(
         # Plot each observable
         for (name, values) in observable_data
             graph = plot!(graph, u_vals, values[T_index, :], labels = name)
+        end
+
+        if csv_overlay_data !== nothing
+            T_csv_index = findall(x -> isapprox(x, T; atol = 1e-8), csv_overlay_T_vals)
+            if length(T_csv_index) != 0
+                if length(T_csv_index) > 1
+                    @warn "Multiple values found for T=$T in CSV overlay data; using first index."
+                end
+                T_csv_index = T_csv_index[1]
+                for (name, data) in csv_overlay_data
+                    graph = scatter!(
+                        graph,
+                        csv_overlay_u_vals,
+                        data[T_csv_index, :],
+                        labels = "$(name) (CSV Overlay)"
+                    )
+                end
+            else
+                @warn "T=$T not found in CSV overlay data; skipping overlay for this T."
+            end
         end
 
         # Save the plot
@@ -609,6 +646,26 @@ function export_observable_data(
         # Plot each observable
         for (name, values) in observable_data
             graph = plot!(graph, T_vals, values[:, u_index], labels = name)
+        end
+
+        if csv_overlay_data !== nothing
+            u_csv_index = findall(x -> isapprox(x, u; atol = 1e-8), csv_overlay_u_vals)
+            if length(u_csv_index) != 0
+                if length(u_csv_index) > 1
+                    @warn "Multiple values found for u=$u in CSV overlay data; using first index."
+                end
+                u_csv_index = u_csv_index[1]
+                for (name, data) in csv_overlay_data
+                    graph = scatter!(
+                        graph,
+                        csv_overlay_T_vals,
+                        data[:, u_csv_index],
+                        labels = "$(name) (CSV Overlay)"
+                    )
+                end
+            else
+                @warn "u=$u not found in CSV overlay data; skipping overlay for this u."
+            end
         end
 
         # Save the plot

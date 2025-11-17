@@ -1,6 +1,6 @@
 [parameters]
 num_colors = 2
-t = 1
+t = 2
 u_test = 0.0
 U = 1.0
 
@@ -21,5 +21,7 @@ u_step = 0.05
 T_fixed_plots = [0.02, 0.1, 0.5]
 u_fixed_plots = [-0.5, 0.0, 0.5]
 
+overlay_data = "tests/grids/N2_grids.zip/N2_grids/2x2_N2_U1_Tmu.zip/2x2_N2_U1_Tmu/"
+
 [graph]
-num_sites = 1
+num_sites = 4

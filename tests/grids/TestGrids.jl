@@ -4,20 +4,13 @@ export main
 
 import HubbardDiagonalization
 import HubbardDiagonalization.Graphs
+import HubbardDiagonalization.CSVUtil
 
 import CSV
 
 using Logging
 using Statistics
 using ZipFile
-
-function read_csv(prefix::String, name::String, zip_reader::ZipFile.Reader)
-    matching_files =
-        filter(f -> startswith(f.name, prefix) && endswith(f.name, name), zip_reader.files)
-    @assert length(matching_files) == 1 "Expected exactly one file matching $name with prefix $prefix, found $(length(matching_files))"
-    file = matching_files[1]
-    return CSV.File(file, header = false) |> CSV.Tables.matrix
-end
 
 function (@main)(args)
     warn_on_nan = false
@@ -133,15 +126,15 @@ function run_test_set(
 
     @info "Running tests for N=$N, U=$U..."
 
-    u_vals = read_csv(prefix, "mu_vals.csv", zip_reader)[:, 1]
-    T_vals = read_csv(prefix, "T_vals.csv", zip_reader)[:, 1]
+    u_vals = CSVUtil.read_zipped_csv(prefix, "mu_vals.csv", zip_reader)[:, 1]
+    T_vals = CSVUtil.read_zipped_csv(prefix, "T_vals.csv", zip_reader)[:, 1]
 
     # Map file names to expected data
     expected_data = Dict{String,AbstractMatrix{Float64}}()
 
     # Read in the test files
     for results_file in unique(values(test_observables))
-        expected = read_csv(prefix, results_file, zip_reader)
+        expected = CSVUtil.read_zipped_csv(prefix, results_file, zip_reader)
         @assert size(expected) == (length(T_vals), length(u_vals)) "Expected data size mismatch for $results_file"
         expected_data[results_file] = expected
     end
