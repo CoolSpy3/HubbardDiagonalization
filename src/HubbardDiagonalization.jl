@@ -374,6 +374,7 @@ function diagonalize_and_compute_observables(
                     end
 
                     # Get the sites involved in the hop
+                    # TODO: I wrote this this way because it was readable, but I bet we could optimize this out to a function that just does bit-manipulation rather than converting to arrays
                     hopped_sites = digits(diff[hopped_color], base = 2, pad = num_sites)
                     site_1 = findfirst(isequal(1), hopped_sites)
                     site_2 = findlast(isequal(1), hopped_sites)
