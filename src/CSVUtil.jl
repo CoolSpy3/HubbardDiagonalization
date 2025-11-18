@@ -42,8 +42,9 @@ function load_overlay_data(
         return u_vals, T_vals, overlay_data
     elseif contains(path, ".zip/")
         # Unpack zip and recurse
-        zip_path = first(split(path, ".zip/")) * ".zip"
-        internal_path = join(split(path, ".zip/")[2:end], ".zip/")
+        split_path = split(path, ".zip/")
+        zip_path = first(split_path) * ".zip"
+        internal_path = join(split_path[2:end], ".zip/")
         if zip_reader === nothing
             # Top-level zip file
             zip_reader = ZipFile.Reader(zip_path)
