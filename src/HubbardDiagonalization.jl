@@ -94,6 +94,10 @@ function (@main)(args)
         overlays,
     )
 
+    # Normalize energy and entropy per site
+    observable_data["Energy"] ./= Graphs.num_sites(graph)
+    observable_data["Entropy"] ./= Graphs.num_sites(graph)
+
     export_observable_data(plot_config, t_vals, u_vals, observable_data, test_config, graph)
 
     @info "Done."
@@ -133,22 +137,22 @@ function default_observables(test_config::TestConfiguration, graph::Graph)
 
     observables["Energy"] = _ -> 0.0  # Will be handled specially
 
-    # observables["P_a"] =
-    #     state ->
-    #         count_ones(state[1]) *
-    #         prod((1 - count_ones(state[c]) for c in 2:num_colors), init = 1)
-    # if num_colors >= 2
-    #     observables["P_ab"] =
-    #         state ->
-    #             prod(count_ones(state[c]) for c in 1:2) *
-    #             prod((1 - count_ones(state[c]) for c in 3:num_colors), init = 1)
-    # end
-    # if num_colors >= 3
-    #     observables["P_abc"] =
-    #         state ->
-    #             prod(count_ones(state[c]) for c in 1:3) *
-    #             prod((1 - count_ones(state[c]) for c in 4:num_colors), init = 1)
-    # end
+    observables["P_a"] =
+        state ->
+            count_ones(state[1]) *
+            prod((1 - count_ones(state[c]) for c in 2:num_colors), init = 1)
+    if num_colors >= 2
+        observables["P_ab"] =
+            state ->
+                prod(count_ones(state[c]) for c in 1:2) *
+                prod((1 - count_ones(state[c]) for c in 3:num_colors), init = 1)
+    end
+    if num_colors >= 3
+        observables["P_abc"] =
+            state ->
+                prod(count_ones(state[c]) for c in 1:3) *
+                prod((1 - count_ones(state[c]) for c in 4:num_colors), init = 1)
+    end
 
     # Observables that can be calculated from other observables
     derived_observables = Dict{String,Function}()
