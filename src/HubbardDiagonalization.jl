@@ -50,8 +50,6 @@ function convert_strings_to_symbols(dict::Dict{String,Any})
     return new_dict
 end
 
-
-
 function (@main)(args)
     # Install our own logger for the duration of the program
     old_logger = Logging.global_logger(Logging.ConsoleLogger(stderr, Logging.Debug))
