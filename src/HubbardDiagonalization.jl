@@ -35,6 +35,9 @@ if use_unicode_plots
     unicodeplots()
 end
 
+"""
+    A structure to hold the configuration parameters for the simulation.
+"""
 @kwdef struct TestConfiguration
     num_colors::Int
     t::Float64
@@ -42,6 +45,11 @@ end
     U::Float64
 end
 
+"""
+    convert_strings_to_symbols(dict::Dict{String,Any}) -> Dict{Symbol,Any}
+
+Convert the keys of a dictionary from `String` to `Symbol`. This allows a dictionary loaded from a TOML file to be used as a keyword argument list.
+"""
 function convert_strings_to_symbols(dict::Dict{String,Any})
     new_dict = Dict{Symbol,Any}()
     for (key, value) in dict
@@ -50,6 +58,11 @@ function convert_strings_to_symbols(dict::Dict{String,Any})
     return new_dict
 end
 
+"""
+    main(args::Vector{String}) -> Int
+
+The main entry point! Handles the high-level control flow of the program.
+"""
 function (@main)(args)
     # Install our own logger for the duration of the program
     old_logger = Logging.global_logger(Logging.ConsoleLogger(stderr, Logging.Debug))
@@ -106,6 +119,15 @@ function (@main)(args)
     return 0
 end
 
+"""
+    default_observables(test_config::TestConfiguration, graph::Graph)
+
+Defines the "standard" set of observables to compute for the Hubbard model.
+Returns three dictionaries:
+- observables: Maps observable names to functions that compute them from a basis state.
+- derived_observables: Maps observable names to functions that compute them from the dictionary of computed results for the normal observables.
+- overlays: Maps observable names to functions that compute them from (B, u) pairs.
+"""
 function default_observables(test_config::TestConfiguration, graph::Graph)
     num_colors = test_config.num_colors
     U = test_config.U
@@ -167,18 +189,15 @@ function default_observables(test_config::TestConfiguration, graph::Graph)
 
     if num_sites == 1
         # Single-site Hubbard model exact solutions
-        # e0(n, u) = U * binomial(n, 2) - (u #= + (U / 2) * (num_colors - 1) =#) * n
         e0(n, u) = U * binomial(n, 2) - (u + (U / 2) * (num_colors - 1)) * n
         weighted_sum(B, u, f) =
             sum(binomial(num_colors, n) * f(n) * exp(-B * e0(n, u)) for n in 0:num_colors)
         z0(B, u) = weighted_sum(B, u, n -> 1)
         rho(B, u) = (1/z0(B, u)) * weighted_sum(B, u, n -> n)
-        # energy(u) = (1/z0(u)) * weighted_sum(u, n -> e0(n, u) #= + (u + (U/2) * (num_colors - 1)) *  n =#)
         energy(B, u) =
             (1/z0(B, u)) *
             weighted_sum(B, u, n -> e0(n, u) + (u + (U/2) * (num_colors - 1)) * n)
         overlays["Actual Energy"] = energy
-        # overlays["Actual Entropy"] = u -> log(z0(u)) + B * (energy(u) #= - (u + (U/2) * (num_colors - 1)) * rho(u) =#)
         overlays["Actual Entropy"] =
             (B, u) ->
                 log(z0(B, u)) +
@@ -188,8 +207,21 @@ function default_observables(test_config::TestConfiguration, graph::Graph)
     return observables, derived_observables, overlays
 end
 
+"""
+    diagonalize_and_compute_observables(
+        T_vals::AbstractVector{Float64},
+        u_vals::AbstractVector{Float64},
+        config::TestConfiguration,
+        graph::Graph,
+        observables::Dict{String,Function},
+        derived_observables::Dict{String,Function},
+        overlays::Dict{String,Function},
+    ) -> Dict{String,Matrix{Float64}}
+
+Performs the exact diagonalization of the Hubbard Hamiltonian and computes the specified observables (see default_observables() for specification) over the given ranges of temperature and chemical potential.
+"""
 function diagonalize_and_compute_observables(
-    t_vals::AbstractVector{Float64},
+    T_vals::AbstractVector{Float64},
     u_vals::AbstractVector{Float64},
     config::TestConfiguration,
     graph::Graph,
@@ -204,13 +236,13 @@ function diagonalize_and_compute_observables(
     U = config.U
 
     # Compute some useful quantities
-    num_temps = length(t_vals)
+    num_temps = length(T_vals)
     num_us = length(u_vals)
     num_sites = Graphs.num_sites(graph)
-    B = 1 ./ t_vals
+    B = 1 ./ T_vals
     N_max_fermions = num_colors * num_sites
 
-    @info "Initialized with t=$t, U=$(U), T_vals=$t_vals, u_vals=$u_vals"
+    @info "Initialized with t=$t, U=$(U), T_vals=$T_vals, u_vals=$u_vals"
     @debug begin
         "  Graph edges: $(Graphs.edges(graph))"
     end
@@ -529,10 +561,6 @@ function diagonalize_and_compute_observables(
                 "  $observable_name: $normalized_expectation_values"
             end
 
-            for (j, x) in enumerate(normalized_expectation_values')
-                computed_observable_values[observable_name][j, i] = x
-            end
-
             computed_observable_values[observable_name][:, i] .=
                 normalized_expectation_values'
         end
@@ -545,6 +573,18 @@ function diagonalize_and_compute_observables(
     return computed_observable_values
 end
 
+"""
+    export_observable_data(
+        plot_config::Dict{String,Any},
+        T_vals::AbstractVector{Float64},
+        u_vals::AbstractVector{Float64},
+        observable_data::Dict{String,Matrix{Float64}},
+        config::TestConfiguration,
+        graph::Graph,
+    )
+
+Exports the computed observable data to CSV files and generates plots based on the provided plot configuration.
+"""
 function export_observable_data(
     plot_config::Dict{String,Any},
     T_vals::AbstractVector{Float64},
@@ -566,10 +606,6 @@ function export_observable_data(
     end
 
     # Load csv (if requested)
-    csv_overlay_u_vals = nothing
-    csv_overlay_T_vals = nothing
-    csv_overlay_data = nothing
-
     if haskey(plot_config, "overlay_data") &&
        lowercase(plot_config["overlay_data"]) != "none"
         csv_path = plot_config["overlay_data"]
@@ -580,16 +616,33 @@ function export_observable_data(
 
     @info "Plotting observables..."
 
+    """
+        find_index(arr::AbstractVector{Float64}, val::Float64, var_name::String, warn_on_missing::Bool) -> Int
+
+    A helper function to find the index of a value in an array, asserting that it only appears once.
+    If the value is not found, returns -1 and optionally warns. If the value appears multiple times, warns and returns the first index.
+    """
+    function find_index(
+        arr::AbstractVector{Float64},
+        val::Float64,
+        var_name::String,
+        warn_on_missing::Bool,
+    )
+        indices = findall(x -> isapprox(x, val; atol = 1e-8), arr)
+        if length(indices) == 0
+            if warn_on_missing
+                @warn "$var_name=$val not found in T_vals; skipping fixed-T plot."
+            end
+            return -1
+        elseif length(indices) > 1
+            @warn "Multiple values found for $var_name=$val; using first index."
+        end
+        return indices[1]
+    end
+
     # Create plots for each T value
     for T in plot_config["T_fixed_plots"]
-        T_index = findall(x -> isapprox(x, T; atol = 1e-8), T_vals)
-        if length(T_index) == 0
-            @warn "T=$T not found in T_vals; skipping fixed-T plot."
-            continue
-        elseif length(T_index) > 1
-            @warn "Multiple values found for T=$T; using first index."
-        end
-        T_index = T_index[1]
+        T_index = find_index(T_vals, T, "T", true)
 
         # Initialize the plot
         graph = plot(
@@ -604,13 +657,10 @@ function export_observable_data(
             graph = plot!(graph, u_vals, values[T_index, :], labels = name)
         end
 
-        if csv_overlay_data !== nothing
-            T_csv_index = findall(x -> isapprox(x, T; atol = 1e-8), csv_overlay_T_vals)
-            if length(T_csv_index) != 0
-                if length(T_csv_index) > 1
-                    @warn "Multiple values found for T=$T in CSV overlay data; using first index."
-                end
-                T_csv_index = T_csv_index[1]
+        # If we have CSV overlay data, plot it too
+        if @isdefined csv_overlay_data
+            T_csv_index = find_index(csv_overlay_T_vals, T, "T", false)
+            if T_csv_index != -1
                 for (name, data) in csv_overlay_data
                     graph = scatter!(
                         graph,
@@ -619,8 +669,6 @@ function export_observable_data(
                         labels = "$(name) (CSV Overlay)",
                     )
                 end
-            else
-                @warn "T=$T not found in CSV overlay data; skipping overlay for this T."
             end
         end
 
@@ -630,14 +678,7 @@ function export_observable_data(
 
     # And create a plot at u_test
     for u in plot_config["u_fixed_plots"]
-        u_index = findall(x -> isapprox(x, u; atol = 1e-8), u_vals)
-        if length(u_index) == 0
-            @warn "u=$u not found in u_vals; skipping fixed-u plot."
-            continue
-        elseif length(u_index) > 1
-            @warn "Multiple values found for u=$u; using first index."
-        end
-        u_index = u_index[1]
+        u_index = find_index(u_vals, u, "u", true)
 
         # Initialize the plot
         graph = plot(
@@ -652,13 +693,10 @@ function export_observable_data(
             graph = plot!(graph, T_vals, values[:, u_index], labels = name)
         end
 
-        if csv_overlay_data !== nothing
-            u_csv_index = findall(x -> isapprox(x, u; atol = 1e-8), csv_overlay_u_vals)
-            if length(u_csv_index) != 0
-                if length(u_csv_index) > 1
-                    @warn "Multiple values found for u=$u in CSV overlay data; using first index."
-                end
-                u_csv_index = u_csv_index[1]
+        # If we have CSV overlay data, plot it too
+        if @isdefined csv_overlay_data
+            u_csv_index = find_index(csv_overlay_u_vals, u, "u", false)
+            if u_csv_index != -1
                 for (name, data) in csv_overlay_data
                     graph = scatter!(
                         graph,
@@ -667,8 +705,6 @@ function export_observable_data(
                         labels = "$(name) (CSV Overlay)",
                     )
                 end
-            else
-                @warn "u=$u not found in CSV overlay data; skipping overlay for this u."
             end
         end
 
