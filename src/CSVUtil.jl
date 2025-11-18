@@ -1,3 +1,4 @@
+"Utility functions for working with CSV (and ZIP) files."
 module CSVUtil
 
 export load_csv_matrix, find_zipped_file, read_zipped_csv, load_overlay_data
@@ -24,9 +25,9 @@ Only one matching file is allowed. If multiple or no files are found, an error i
 
 Returns the ZipFile.ReadableFile corresponding to the found file.
 
-prefix -- The prefix string that the file name must start with.
-name -- The name of the file to find. (Will be matched to the end of the file name.)
-zip_reader -- The ZipFile.Reader to search within.
+prefix: The prefix string that the file name must start with.
+name: The name of the file to find. (Will be matched to the end of the file name.)
+zip_reader: The ZipFile.Reader to search within.
 """
 function find_zipped_file(prefix::String, name::String, zip_reader::ZipFile.Reader)
     matching_files =
@@ -55,9 +56,9 @@ Returns a tuple (u_vals, T_vals, overlay_data) where:
 - T_vals: Vector{Float64} of temperature values loaded from "T_vals.csv"
 - overlay_data: Dict{String, Matrix{Float64}} mapping observable names to their corresponding data matrices.
 
-path -- The path to load data from. Can be a directory or a path within a zip archive. The last path element must be
+path: The path to load data from. Can be a directory or a path within a zip archive. The last path element must be
 a directory or zip archive containing the CSV files.
-zip_reader -- (optional) If provided, uses the given ZipFile.Reader as the base of the path.
+zip_reader: (optional) If provided, uses the given ZipFile.Reader as the base of the path.
 """
 function load_overlay_data(
     path::String,

@@ -8,12 +8,13 @@ Here is a basic overview of the project layout.
   |- RepositoryLayout.md    # This file!
   |- SimulationConfig.toml  # Simulation parameters
   |- src/                   # Main project source files
-  | |- graphs.jl              # Defines a basic undirected graph structure and some common graph types.
-  | |- main.jl                # Entrypoint and main logic
-  | |- state_enumeration.jl   # Helper functions for enumerating states under various constraints
-  | \- symmetric_matrices.jl  # Defines a SymmetricMatrix type that stores only the lower-triangular part of the matrix.
+  | |- CSVUtil.jl                 # Utility functions for working with CSV (and ZIP) files.
+  | |- Graphs.jl                  # Defines a basic undirected graph structure and some common graph types.
+  | |- HubbardDiagonalization.jl  # Entrypoint and main logic
+  | |- StateEnumeration.jl        # Helper functions for enumerating states under various constraints
+  | \- SymmetricMatrices.jl       # Defines a SymmetricMatrix type that stores only the lower-triangular part of the matrix.
   \- tests/                 # Test files
-    \- n2_grids             # Test output against sample 2x2 grid results
-      |- N2_grids.zip       # Test data
-      \- TestN2.jl       # Test script
+    \- grids                  # Test output against sample 2x2 grid results
+      |- *.zip                  # Test datasets
+      \- TestGrids.jl           # Test script
 ```
