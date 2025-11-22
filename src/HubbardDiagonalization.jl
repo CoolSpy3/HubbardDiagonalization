@@ -613,104 +613,115 @@ function export_observable_data(
         @info "Loading CSV overlay data from $csv_path..."
         csv_overlay_u_vals, csv_overlay_T_vals, csv_overlay_data =
             CSVUtil.load_overlay_data(csv_path)
+
+        u_indices =
+            CSVUtil.get_clip_indices(csv_overlay_u_vals, minimum(u_vals), maximum(u_vals))
+        T_indices =
+            CSVUtil.get_clip_indices(csv_overlay_T_vals, minimum(T_vals), maximum(T_vals))
+
+        csv_overlay_u_vals = csv_overlay_u_vals[u_indices]
+        csv_overlay_T_vals = csv_overlay_T_vals[T_indices]
+        for (key, value) in csv_overlay_data
+            csv_overlay_data[key] = value[T_indices, u_indices]
+        end
     end
 
     @info "Plotting observables..."
 
-    """
-        find_index(arr::AbstractVector{Float64}, val::Float64, var_name::String, warn_on_missing::Bool) -> Int
-
-    A helper function to find the index of a value in an array, asserting that it only appears once.
-    If the value is not found, returns -1 and optionally warns. If the value appears multiple times, warns and returns the first index.
-    """
-    function find_index(
-        arr::AbstractVector{Float64},
-        val::Float64,
-        var_name::String,
-        warn_on_missing::Bool,
-    )
-        indices = findall(x -> isapprox(x, val; atol = 1e-8), arr)
-        if length(indices) == 0
-            if warn_on_missing
-                @warn "$var_name=$val not found in T_vals; skipping fixed-T plot."
-            end
-            return -1
-        elseif length(indices) > 1
-            @warn "Multiple values found for $var_name=$val; using first index."
+    function plot_data(fixed_value::Float64, fixed_value_type::Symbol)
+        if fixed_value_type == :T
+            fixed_value_name = "T"
+            fixed_axis = T_vals
+            fixed_overlay_axis = csv_overlay_T_vals
+            x_axis = u_vals
+            x_axis_name = "u"
+            x_overlay_axis = csv_overlay_u_vals
+            indexer = (index, data) -> data[index, :]
+        elseif fixed_value_type == :u
+            fixed_value_name = "u"
+            fixed_axis = u_vals
+            fixed_overlay_axis = csv_overlay_u_vals
+            x_axis = T_vals
+            x_axis_name = "T"
+            x_overlay_axis = csv_overlay_T_vals
+            indexer = (index, data) -> data[:, index]
+        else
+            error("Invalid fixed_value_type: $fixed_value_type")
         end
-        return indices[1]
+
+        index = CSVUtil.find_index(fixed_axis, fixed_value, fixed_value_name, true)
+        csv_index =
+            @isdefined(csv_overlay_data) ?
+            CSVUtil.find_index(fixed_overlay_axis, fixed_value, fixed_value_name, false) :
+            -1
+
+        figures = []
+        for (observables, csv_overlays) in plot_config["observables"]
+            figure = plot(
+                xlabel = x_axis_name,
+                ylabel = "Observable Value",
+                title = join(observables, ", "),
+                legend = length(observables) > 1 || length(csv_overlays) > 1,
+                size = (plot_width, plot_height),
+            )
+            for observable_name in observables
+                if !haskey(observable_data, observable_name)
+                    @warn "Observable $observable_name not found; skipping."
+                    continue
+                end
+                figure = plot!(
+                    figure,
+                    x_axis,
+                    indexer(index, observable_data[observable_name]),
+                    labels = observable_name,
+                )
+            end
+            if csv_index != -1
+                for csv_overlay_name in csv_overlays
+                    if !haskey(csv_overlay_data, csv_overlay_name)
+                        @warn "Overlay $csv_overlay_name not found; skipping."
+                        continue
+                    end
+                    data = indexer(csv_index, csv_overlay_data[csv_overlay_name])
+                    filtered_indices =
+                        CSVUtil.indices_excluding_similar_data(data, 0.02, 0.01)
+                    figure = scatter!(
+                        figure,
+                        x_overlay_axis[filtered_indices],
+                        data[filtered_indices],
+                        labels = "$(csv_overlay_name) (CSV Overlay)",
+                        ms = 4,
+                        ma = 0.5,
+                        lw = 0,
+                    )
+                end
+            end
+            push!(figures, figure)
+        end
+
+        # Merge all figures into a single plot
+        combined_figure = plot(
+            figures...;
+            plot_title = "t=$(config.t), $fixed_value_name=$fixed_value, U=$(config.U), num_sites=$num_sites, num_colors=$(config.num_colors)",
+            legend = true,
+            layout = length(figures),
+        )
+
+        # Save the plot
+        savefig(
+            combined_figure,
+            "output/observable_data_$(fixed_value_name)_$fixed_value.png",
+        )
     end
 
     # Create plots for each T value
     for T in plot_config["T_fixed_plots"]
-        T_index = find_index(T_vals, T, "T", true)
-
-        # Initialize the plot
-        graph = plot(
-            xlabel = "u",
-            ylabel = "Observable Value",
-            title = "t=$(config.t), T=$T, U=$(config.U), num_sites=$num_sites, num_colors=$(config.num_colors)",
-            legend = :topright,
-            size = (plot_width, plot_height),
-        )
-        # Plot each observable
-        for (name, values) in observable_data
-            graph = plot!(graph, u_vals, values[T_index, :], labels = name)
-        end
-
-        # If we have CSV overlay data, plot it too
-        if @isdefined csv_overlay_data
-            T_csv_index = find_index(csv_overlay_T_vals, T, "T", false)
-            if T_csv_index != -1
-                for (name, data) in csv_overlay_data
-                    graph = scatter!(
-                        graph,
-                        csv_overlay_u_vals,
-                        data[T_csv_index, :],
-                        labels = "$(name) (CSV Overlay)",
-                    )
-                end
-            end
-        end
-
-        # Save the plot
-        savefig(graph, "output/observable_data_T_$T.png")
+        plot_data(T, :T)
     end
 
-    # And create a plot at u_test
+    # And create plots for each u value
     for u in plot_config["u_fixed_plots"]
-        u_index = find_index(u_vals, u, "u", true)
-
-        # Initialize the plot
-        graph = plot(
-            xlabel = "T",
-            ylabel = "Observable Value",
-            title = "t=$(config.t), u=$u, U=$(config.U), num_sites=$num_sites, num_colors=$(config.num_colors)",
-            legend = :topright,
-            size = (plot_width, plot_height),
-        )
-        # Plot each observable
-        for (name, values) in observable_data
-            graph = plot!(graph, T_vals, values[:, u_index], labels = name)
-        end
-
-        # If we have CSV overlay data, plot it too
-        if @isdefined csv_overlay_data
-            u_csv_index = find_index(csv_overlay_u_vals, u, "u", false)
-            if u_csv_index != -1
-                for (name, data) in csv_overlay_data
-                    graph = scatter!(
-                        graph,
-                        csv_overlay_T_vals,
-                        data[:, u_csv_index],
-                        labels = "$(name) (CSV Overlay)",
-                    )
-                end
-            end
-        end
-
-        # Save the plot
-        savefig(graph, "output/observable_data_u_$u.png")
+        plot_data(u, :u)
     end
 
     return

@@ -13,13 +13,20 @@ height = 800
 T_min = 0.02
 T_max = 10
 T_step = 0.02
-u_min = -5
-u_max = 5
+u_min = -20
+u_max = 20
 u_step = 0.05
 
 # Specific Plots to Generate
 T_fixed_plots = [0.02, 0.1, 0.5]
 u_fixed_plots = [-0.5, 0.0, 0.5]
+observables = [
+	[["Density"], ["Densities"]],
+	[["Double Occupancies"], ["Doubleoccupancies"]],
+	[["Energy"], ["Energies"]],
+	[["Local Moment"], []],
+	[["Entropy"], ["Entropies"]]
+]
 
 overlay_data = "tests/grids/N2_grids.zip/N2_grids/2x2_N2_U1_Tmu.zip/2x2_N2_U1_Tmu/"
 

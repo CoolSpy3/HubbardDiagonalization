@@ -2,6 +2,7 @@
 module CSVUtil
 
 export load_csv_matrix, find_zipped_file, read_zipped_csv, load_overlay_data
+export find_index, get_clip_indices, indices_excluding_similar_data
 
 import CSV
 import ZipFile
@@ -119,6 +120,56 @@ function load_overlay_data(
         end
         return u_vals, T_vals, overlay_data
     end
+end
+
+"""
+    find_index(arr::AbstractVector{Float64}, val::Float64, var_name::String, warn_on_missing::Bool) -> Int
+
+A helper function to find the index of a value in an array, asserting that it only appears once.
+If the value is not found, returns -1 and optionally warns. If the value appears multiple times, warns and returns the first index.
+"""
+function find_index(
+    arr::AbstractVector{Float64},
+    val::Float64,
+    var_name::String,
+    warn_on_missing::Bool,
+)
+    indices = findall(x -> isapprox(x, val; atol = 1e-8), arr)
+    if length(indices) == 0
+        if warn_on_missing
+            @warn "$var_name=$val not found in T_vals; skipping fixed-T plot."
+        end
+        return -1
+    elseif length(indices) > 1
+        @warn "Multiple values found for $var_name=$val; using first index."
+    end
+    return indices[1]
+end
+
+function get_clip_indices(data::AbstractVector{Float64}, min::Float64, max::Float64)
+    min_index = findfirst(x -> x >= min, data)
+    max_index = findlast(x -> x <= max, data)
+    return min_index:max_index
+end
+
+function indices_excluding_similar_data(
+    data::AbstractVector{Float64},
+    max_x_percentage_diff::Float64,
+    max_y_percentage_diff::Float64,
+)
+    max_spacing = length(data) * max_x_percentage_diff
+    atol = (maximum(data) - minimum(data)) * max_y_percentage_diff
+    indicies = [1]
+    last_index = 1
+    last_value = data[1]
+    for (i, val) in enumerate(@view data[2:end])
+        if (i - last_index) > max_spacing || !isapprox(val, last_value; atol = atol)
+            push!(indicies, i)
+            last_index = i
+            last_value = val
+        end
+    end
+    return indicies
 end
 
 end
