@@ -676,7 +676,8 @@ function export_observable_data(
                 xlabel = x_axis_name,
                 ylabel = "Observable Value",
                 title = join(observables, ", "),
-                legend = length(observables) > 1 || length(csv_overlays) > 1,
+                # Only show legend if it would be confusing without one
+                legend_position = length(observables) > 1 || length(csv_overlays) > 1,
                 size = (plot_width, plot_height),
             )
             # Add each observable
