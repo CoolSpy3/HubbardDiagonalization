@@ -1,7 +1,9 @@
 "Utility functions for working with CSV (and ZIP) files."
 module CSVUtil
 
+# File-based functions
 export load_csv_matrix, find_zipped_file, read_zipped_csv, load_overlay_data
+# Data-based functions
 export find_index, get_clip_indices, indices_excluding_similar_data
 
 import CSV
@@ -123,7 +125,7 @@ function load_overlay_data(
 end
 
 """
-    find_index(arr::AbstractVector{Float64}, val::Float64, var_name::String, warn_on_missing::Bool) -> Int
+    find_index(arr::AbstractVector{Float64}, val::Float64, var_name::String, warn_on_missing::Bool, atol::Float64 = 1e-8)
 
 A helper function to find the index of a value in an array, asserting that it only appears once.
 If the value is not found, returns -1 and optionally warns. If the value appears multiple times, warns and returns the first index.
@@ -133,8 +135,9 @@ function find_index(
     val::Float64,
     var_name::String,
     warn_on_missing::Bool,
+    atol::Float64 = 1e-8,
 )
-    indices = findall(x -> isapprox(x, val; atol = 1e-8), arr)
+    indices = findall(x -> isapprox(x, val; atol = atol), arr)
     if length(indices) == 0
         if warn_on_missing
             @warn "$var_name=$val not found in T_vals; skipping fixed-T plot."
@@ -146,23 +149,48 @@ function find_index(
     return indices[1]
 end
 
-function get_clip_indices(data::AbstractVector{Float64}, min::Float64, max::Float64)
-    min_index = findfirst(x -> x >= min, data)
-    max_index = findlast(x -> x <= max, data)
-    return min_index:max_index
-end
+"""
+    get_clip_indices(data::AbstractVector{Float64}, min::Float64, max::Float64)
 
+Get the indices of a data vector that fall within the specified min and max range (inclusive).
+data: The vector of data to search.
+min: The minimum value of the range to be included.
+max: The maximum value of the range to be included.
+"""
+get_clip_indices(data::AbstractVector{Float64}, min::Float64, max::Float64) =
+    [i for (i, val) in enumerate(data) if val >= min && val <= max]
+
+"""
+    indices_excluding_similar_data(
+        data::AbstractVector{Float64},
+        x_percentage_diff::Float64,
+        y_percentage_diff::Float64,
+    )
+
+Get indices of data points in `data` that are sufficiently spaced apart in both x (index) and y (value).
+Two points are considered "similar" if:
+- Their indices differ by less than `x_percentage_diff * length(data)` OR
+- Their values differ by less than `y_percentage_diff * (maximum(data) - minimum(data))`
+
+data: The vector of data points to evaluate. It is assumed that this is a set of y-values ordered by and evenly-spaced in x.
+x_percentage_diff: The maximum percentage of the x-range that can be skipped due to similar datapoints.
+y_percentage_diff: The maximum percentage of the y-range that can be skipped due to similar datapoints.
+"""
 function indices_excluding_similar_data(
     data::AbstractVector{Float64},
-    max_x_percentage_diff::Float64,
-    max_y_percentage_diff::Float64,
+    x_percentage_diff::Float64,
+    y_percentage_diff::Float64,
 )
-    max_spacing = length(data) * max_x_percentage_diff
-    atol = (maximum(data) - minimum(data)) * max_y_percentage_diff
-    indicies = [1]
-    last_index = 1
-    last_value = data[1]
+    # Calculate thresholds
+    max_spacing = length(data) * x_percentage_diff
+    atol = (maximum(data) - minimum(data)) * y_percentage_diff
+
+    # Initialize tracking variables
+    indicies = [1]  # Always include the first index
+    last_index = 1  # Index of the last included point
+    last_value = data[1]  # Value of the last included point
     for (i, val) in enumerate(@view data[2:end])
+        # If the next point is sufficiently far in index or value, include it
         if (i - last_index) > max_spacing || !isapprox(val, last_value; atol = atol)
             push!(indicies, i)
             last_index = i

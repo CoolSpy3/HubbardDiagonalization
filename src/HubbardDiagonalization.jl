@@ -614,6 +614,7 @@ function export_observable_data(
         csv_overlay_u_vals, csv_overlay_T_vals, csv_overlay_data =
             CSVUtil.load_overlay_data(csv_path)
 
+        # Clip csv data to the range of our computed data
         u_indices =
             CSVUtil.get_clip_indices(csv_overlay_u_vals, minimum(u_vals), maximum(u_vals))
         T_indices =
@@ -628,16 +629,25 @@ function export_observable_data(
 
     @info "Plotting observables..."
 
+    """
+        plot_data(fixed_value::Float64, fixed_value_type::Symbol)
+
+    Creates plots for the given fixed value of either T or u.
+    fixed_value: The value of either T or u that's fixed.
+    fixed_value_type: Either :T or :u, indicating which variable is fixed.
+    """
     function plot_data(fixed_value::Float64, fixed_value_type::Symbol)
+        # Because we know which value is fixed, we can set up the axes accordingly
         if fixed_value_type == :T
-            fixed_value_name = "T"
-            fixed_axis = T_vals
-            fixed_overlay_axis = csv_overlay_T_vals
-            x_axis = u_vals
-            x_axis_name = "u"
-            x_overlay_axis = csv_overlay_u_vals
-            indexer = (index, data) -> data[index, :]
+            fixed_value_name = "T"  # Name of the fixed variable
+            fixed_axis = T_vals     # Value array for the fixed variable (to get the index in the computed data)
+            fixed_overlay_axis = csv_overlay_T_vals  # Value array for the fixed variable (to get the index in the CSV data)
+            x_axis_name = "u"       # x-axis label
+            x_axis = u_vals         # x-axis values for the generated data
+            x_overlay_axis = csv_overlay_u_vals  # x-axis values for the CSV data
+            indexer = (index, data) -> data[index, :]  # Function to index into the data matrices
         elseif fixed_value_type == :u
+            # Same as above, but altered for fixed u
             fixed_value_name = "u"
             fixed_axis = u_vals
             fixed_overlay_axis = csv_overlay_u_vals
@@ -649,14 +659,19 @@ function export_observable_data(
             error("Invalid fixed_value_type: $fixed_value_type")
         end
 
+        # Find the indices corresponding to the fixed value
         index = CSVUtil.find_index(fixed_axis, fixed_value, fixed_value_name, true)
         csv_index =
             @isdefined(csv_overlay_data) ?
             CSVUtil.find_index(fixed_overlay_axis, fixed_value, fixed_value_name, false) :
+            # If no CSV data was loaded, just say we didn't find the axis
             -1
 
+        # Array to store the subplots
         figures = []
+        # For every subplot configuration
         for (observables, csv_overlays) in plot_config["observables"]
+            # Create a plot
             figure = plot(
                 xlabel = x_axis_name,
                 ylabel = "Observable Value",
@@ -664,6 +679,7 @@ function export_observable_data(
                 legend = length(observables) > 1 || length(csv_overlays) > 1,
                 size = (plot_width, plot_height),
             )
+            # Add each observable
             for observable_name in observables
                 if !haskey(observable_data, observable_name)
                     @warn "Observable $observable_name not found; skipping."
@@ -676,6 +692,7 @@ function export_observable_data(
                     labels = observable_name,
                 )
             end
+            # If valid data exists in the CSV, add those observables too
             if csv_index != -1
                 for csv_overlay_name in csv_overlays
                     if !haskey(csv_overlay_data, csv_overlay_name)
@@ -683,6 +700,7 @@ function export_observable_data(
                         continue
                     end
                     data = indexer(csv_index, csv_overlay_data[csv_overlay_name])
+                    # Filter out similar data points to prevent the plot from getting too crowded
                     filtered_indices =
                         CSVUtil.indices_excluding_similar_data(data, 0.02, 0.01)
                     figure = scatter!(
@@ -690,12 +708,14 @@ function export_observable_data(
                         x_overlay_axis[filtered_indices],
                         data[filtered_indices],
                         labels = "$(csv_overlay_name) (CSV Overlay)",
+                        # Some styling to make the plots nicer
                         ms = 4,
                         ma = 0.5,
-                        lw = 0,
                     )
                 end
             end
+
+            # Add the subplot to the list
             push!(figures, figure)
         end
 
@@ -703,7 +723,6 @@ function export_observable_data(
         combined_figure = plot(
             figures...;
             plot_title = "t=$(config.t), $fixed_value_name=$fixed_value, U=$(config.U), num_sites=$num_sites, num_colors=$(config.num_colors)",
-            legend = true,
             layout = length(figures),
         )
 

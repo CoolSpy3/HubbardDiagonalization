@@ -20,6 +20,10 @@ u_step = 0.05
 # Specific Plots to Generate
 T_fixed_plots = [0.02, 0.1, 0.5]
 u_fixed_plots = [-0.5, 0.0, 0.5]
+# Observables to Plot in the format:
+# [subplots]
+# where each subplot is:
+#   [[generated observable names], [csv data names (from overlay_data)]]
 observables = [
 	[["Density"], ["Densities"]],
 	[["Double Occupancies"], ["Doubleoccupancies"]],
